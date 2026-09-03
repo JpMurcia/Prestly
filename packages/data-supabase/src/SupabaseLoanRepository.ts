@@ -1,4 +1,5 @@
 import type {
+  ActiveLoanSummary,
   CollectionRouteEntry,
   ILoanRepository,
   InstallmentStatus,
@@ -9,7 +10,8 @@ import type {
   NewLoan,
   PaymentFrequency,
 } from '@repo/core';
-import { supabase } from './supabaseClient';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { fromDateOnly, toDateOnly } from './dateOnly';
 
 // ── Mapeo inglés (dominio) ⇄ español (columnas de spec.md raíz §4) ─────────────
 
@@ -70,14 +72,22 @@ interface PrestamoRow {
   cuotas: CuotaRow[] | null;
 }
 
+interface PrestamoActivoConClienteRow extends PrestamoRow {
+  clientes: { id: string; nombre: string; telefono: string };
+}
+
 const PRESTAMO_CON_CUOTAS_SELECT =
   'id, cliente_id, capital, tasa_interes, estrategia, num_cuotas, frecuencia, fecha_emision, estado, creado_en, cuotas(*)';
+
+const PRESTAMO_ACTIVO_CON_CLIENTE_SELECT =
+  'id, cliente_id, capital, tasa_interes, estrategia, num_cuotas, frecuencia, fecha_emision, estado, creado_en, ' +
+  'cuotas(*), clientes(id, nombre, telefono)';
 
 function toLoanInstallment(row: CuotaRow): LoanInstallment {
   return {
     id: row.id,
     number: row.numero,
-    dueDate: new Date(row.fecha_vencimiento),
+    dueDate: fromDateOnly(row.fecha_vencimiento),
     principalPortion: row.monto_capital,
     interestPortion: row.monto_interes,
     totalAmount: row.monto_cuota,
@@ -100,19 +110,16 @@ function toLoan(row: PrestamoRow): Loan {
     strategy: STRATEGY_FROM_DB[row.estrategia] ?? 'flatFixedInstallment',
     installmentCount: row.num_cuotas,
     frequency: FREQUENCY_FROM_DB[row.frecuencia] ?? 'weekly',
-    issueDate: new Date(row.fecha_emision),
+    issueDate: fromDateOnly(row.fecha_emision),
     status: STATUS_FROM_DB[row.estado] ?? 'active',
     installments,
     createdAt: new Date(row.creado_en),
   };
 }
 
-function toDateOnly(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
 /** Se lanza cuando `registrar_cobro` no encuentra una cuota `pendiente` (ya pagada o
- * inexistente) — la guarda de concurrencia de contracts/data-contract.md (FR-013). */
+ * inexistente) — la guarda de concurrencia de contracts/data-contract.md (FR-013 en
+ * specs/001-mobile-field-app/, reutilizada tal cual por specs/002-admin-web/ FR-012). */
 export class InstallmentAlreadyPaidError extends Error {
   constructor(installmentId: string) {
     super(`La cuota ${installmentId} ya no está pendiente (pagada por otra sesión, o no existe).`);
@@ -120,10 +127,19 @@ export class InstallmentAlreadyPaidError extends Error {
   }
 }
 
-/** Implementación concreta de ILoanRepository contra Supabase (contracts/data-contract.md §US1/§US2/§US4). */
+/** Implementación concreta de ILoanRepository contra Supabase (contracts/data-contract.md).
+ * Compartida por apps/mobile y apps/web — recibe el `SupabaseClient` ya creado (con las
+ * credenciales de cada app) por inyección de constructor en vez de un singleton de módulo. */
 export class SupabaseLoanRepository implements ILoanRepository {
+  private readonly supabase: SupabaseClient;
+
+  // Asignación explícita — ver el mismo comentario en SupabaseClientRepository.ts.
+  constructor(supabase: SupabaseClient) {
+    this.supabase = supabase;
+  }
+
   async findById(id: string): Promise<Loan | null> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('prestamos')
       .select(PRESTAMO_CON_CUOTAS_SELECT)
       .eq('id', id)
@@ -134,7 +150,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
   }
 
   async save(loan: NewLoan): Promise<Loan> {
-    const { data: newLoanId, error } = await supabase.rpc('emitir_prestamo', {
+    const { data: newLoanId, error } = await this.supabase.rpc('emitir_prestamo', {
       p_cliente_id: loan.clientId,
       p_capital: loan.principal,
       p_tasa_interes: loan.interestRate,
@@ -159,7 +175,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
   }
 
   async listByClient(clientId: string): Promise<Loan[]> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('prestamos')
       .select(PRESTAMO_CON_CUOTAS_SELECT)
       .eq('cliente_id', clientId)
@@ -171,7 +187,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
   }
 
   async findActiveByClient(clientId: string): Promise<Loan | null> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('prestamos')
       .select(PRESTAMO_CON_CUOTAS_SELECT)
       .eq('cliente_id', clientId)
@@ -183,7 +199,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
   }
 
   async markInstallmentPaid(installmentId: string): Promise<LoanInstallment> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .rpc('registrar_cobro', { p_cuota_id: installmentId })
       .single<CuotaRow>();
 
@@ -197,7 +213,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
   async listCollectionRoute(referenceDate: Date): Promise<CollectionRouteEntry[]> {
     const today = toDateOnly(referenceDate);
 
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('cuotas')
       .select(
         'id, numero, fecha_vencimiento, monto_capital, monto_interes, monto_cuota, estado, fecha_pago, monto_pagado, ' +
@@ -216,7 +232,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
     if (error) throw error;
 
     return (data ?? []).map((row) => {
-      const dueDate = new Date(row.fecha_vencimiento);
+      const dueDate = fromDateOnly(row.fecha_vencimiento);
       const overdueDays = Math.max(
         0,
         Math.round((referenceDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -229,5 +245,23 @@ export class SupabaseLoanRepository implements ILoanRepository {
         overdueDays,
       };
     });
+  }
+
+  /** Todos los préstamos activos, de cualquier cliente, pre-unidos con su cliente para
+   * evitar N+1 (specs/002-admin-web/, US2, contracts/data-contract.md §US2). */
+  async listActive(): Promise<ActiveLoanSummary[]> {
+    const { data, error } = await this.supabase
+      .from('prestamos')
+      .select(PRESTAMO_ACTIVO_CON_CLIENTE_SELECT)
+      .eq('estado', 'activo')
+      .order('fecha_emision', { ascending: false })
+      .returns<PrestamoActivoConClienteRow[]>();
+
+    if (error) throw error;
+
+    return (data ?? []).map((row) => ({
+      loan: toLoan(row),
+      client: { id: row.clientes.id, name: row.clientes.nombre, phone: row.clientes.telefono },
+    }));
   }
 }

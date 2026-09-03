@@ -152,6 +152,13 @@ export interface CollectionRouteEntry {
   overdueDays: number;
 }
 
+/** Un préstamo activo pre-unido a su cliente — evita N+1 al pintar la tabla de "Préstamos
+ * activos" de Admin Web (specs/002-admin-web/, US2, mockup 1c). */
+export interface ActiveLoanSummary {
+  loan: Loan;
+  client: Pick<Client, 'id' | 'name' | 'phone'>;
+}
+
 export interface ILoanRepository {
   findById(id: string): Promise<Loan | null>;
   /** Crea un préstamo nuevo junto con todas sus cuotas de forma atómica (FR-004, US1);
@@ -164,4 +171,24 @@ export interface ILoanRepository {
   markInstallmentPaid(installmentId: string): Promise<LoanInstallment>;
   /** Cuotas vencidas o que vencen hoy de préstamos activos, ordenadas por prioridad (FR-007). */
   listCollectionRoute(referenceDate: Date): Promise<CollectionRouteEntry[]>;
+  /** Todos los préstamos activos, de cualquier cliente (specs/002-admin-web/, US2, FR-002) —
+   * a diferencia de los métodos de arriba, no requiere conocer un cliente de antemano. */
+  listActive(): Promise<ActiveLoanSummary[]>;
+}
+
+/** Agregado de cartera derivado de `prestamos`/`cuotas` (specs/002-admin-web/, US1) — nunca
+ * almacenado, igual patrón que `ClientScore` (constitución, Principio IV). */
+export interface PortfolioSummary {
+  principalLent: number;
+  totalRecovered: number;
+  interestEarned: number;
+  overdueAmount: number;
+  overdueInstallments: number;
+  overdueClients: number;
+}
+
+// ISP (constitución Principio I): interfaz separada de ILoanRepository/IClientReader — el
+// dashboard solo necesita este agregado de solo-lectura, nada de las demás operaciones.
+export interface IPortfolioReader {
+  getSummary(): Promise<PortfolioSummary>;
 }

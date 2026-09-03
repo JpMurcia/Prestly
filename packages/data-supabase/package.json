@@ -1,0 +1,40 @@
+{
+  "name": "@repo/data-supabase",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "jest",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@repo/core": "*",
+    "@supabase/supabase-js": "^2.115.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^29.7.0",
+    "oxlint": "^1.81.0",
+    "ts-jest": "^29.4.12"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "commonjs",
+            "moduleResolution": "node10",
+            "ignoreDeprecations": "6.0"
+          }
+        }
+      ]
+    }
+  }
+}

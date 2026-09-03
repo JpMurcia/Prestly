@@ -8,7 +8,8 @@ import type {
   NewClient,
   PortfolioStatus,
 } from '@repo/core';
-import { supabase } from './supabaseClient';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { fromDateOnly } from './dateOnly';
 
 /** Fila cruda de `clientes`, con sus `prestamos` (filtrados a `estado='activo'`) embebidos vía PostgREST. */
 interface ClienteRow {
@@ -68,7 +69,7 @@ function computePortfolio(prestamo: PrestamoActivoRow | undefined, today: Date):
   let nextDueDate: Date | undefined;
 
   if (proxima) {
-    nextDueDate = new Date(proxima.fecha_vencimiento);
+    nextDueDate = fromDateOnly(proxima.fecha_vencimiento);
     const diffDays = Math.round((today.getTime() - nextDueDate.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays > 0) {
       status = 'mora';
@@ -107,10 +108,21 @@ function toClient(row: ClienteRow, today: Date): Client {
   };
 }
 
-/** Implementación concreta de IClientReader/IClientWriter contra Supabase (contracts/data-contract.md §US3/§US4). */
+/** Implementación concreta de IClientReader/IClientWriter contra Supabase (contracts/data-contract.md).
+ * Compartida por apps/mobile y apps/web — recibe el `SupabaseClient` ya creado (con las
+ * credenciales de cada app) por inyección de constructor en vez de un singleton de módulo. */
 export class SupabaseClientRepository implements IClientReader, IClientWriter {
+  private readonly supabase: SupabaseClient;
+
+  // Asignación explícita (en vez de una propiedad de parámetro `constructor(private...)`)
+  // porque apps/web compila con `erasableSyntaxOnly` (transpilación solo-tipos, sin emitir
+  // código adicional a partir de anotaciones) — ver specs/002-admin-web/tasks.md T013/T014.
+  constructor(supabase: SupabaseClient) {
+    this.supabase = supabase;
+  }
+
   async findById(id: string): Promise<Client | null> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('clientes')
       .select(CLIENTE_CON_PRESTAMO_ACTIVO_SELECT)
       .eq('id', id)
@@ -123,7 +135,7 @@ export class SupabaseClientRepository implements IClientReader, IClientWriter {
   }
 
   async list(filter?: ClientFilter): Promise<Client[]> {
-    let query = supabase
+    let query = this.supabase
       .from('clientes')
       .select(CLIENTE_CON_PRESTAMO_ACTIVO_SELECT)
       .eq('prestamos.estado', 'activo')
@@ -145,7 +157,7 @@ export class SupabaseClientRepository implements IClientReader, IClientWriter {
   }
 
   async create(data: NewClient): Promise<Client> {
-    const { data: row, error } = await supabase
+    const { data: row, error } = await this.supabase
       .from('clientes')
       .insert({ nombre: data.name, telefono: data.phone, direccion: data.address ?? null })
       .select('id, nombre, telefono, direccion, notas_privadas, notas_actualizadas_en, creado_en')
@@ -165,7 +177,7 @@ export class SupabaseClientRepository implements IClientReader, IClientWriter {
       patch.notas_actualizadas_en = new Date().toISOString();
     }
 
-    const { data: row, error } = await supabase
+    const { data: row, error } = await this.supabase
       .from('clientes')
       .update(patch)
       .eq('id', id)
@@ -178,7 +190,7 @@ export class SupabaseClientRepository implements IClientReader, IClientWriter {
   }
 
   async getScore(clientId: string): Promise<ClientScore> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('cliente_score')
       .select('grado, cuotas_pagadas, cuotas_historicas')
       .eq('cliente_id', clientId)
@@ -196,7 +208,7 @@ export class SupabaseClientRepository implements IClientReader, IClientWriter {
 
   /** Búsqueda por teléfono exacto para la guarda anti-duplicado de US1 (data-model.md). */
   async findByPhone(phone: string): Promise<Client | null> {
-    const { data, error } = await supabase
+    const { data, error } = await this.supabase
       .from('clientes')
       .select(CLIENTE_CON_PRESTAMO_ACTIVO_SELECT)
       .eq('telefono', phone)
