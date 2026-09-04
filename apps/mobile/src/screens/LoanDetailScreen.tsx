@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Badge, Card, ProgressBar } from '@repo/ui/native';
+import { Badge, Button, Card, ProgressBar } from '@repo/ui/native';
 
 import { useLoan } from '../hooks/useLoan';
+import { usePayoffLoan } from '../hooks/usePayoffLoan';
 import { clientRepository } from '../data/repositories';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -12,7 +13,7 @@ import { formatMoney } from '../utils/money';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DetallePrestamo'>;
 
-/** Mockup 1b — detalle del préstamo: cliente, progreso y cronograma completo (Polish). */
+/** Mockup 1b — detalle del préstamo: cliente, progreso y cronograma completo. */
 export function LoanDetailScreen({ route }: Props) {
   const { loanId } = route.params;
   const { data: loan, isLoading } = useLoan(loanId);
@@ -22,6 +23,7 @@ export function LoanDetailScreen({ route }: Props) {
     enabled: !!loan,
   });
   const [selectedInstallment, setSelectedInstallment] = useState<{ id: string; amount: number; label: string } | null>(null);
+  const payoffLoan = usePayoffLoan();
 
   if (isLoading || !loan) {
     return (
@@ -32,7 +34,26 @@ export function LoanDetailScreen({ route }: Props) {
   }
 
   const paidCount = loan.installments.filter((i) => i.status === 'paid').length;
-  const balance = loan.installments.reduce((acc, i) => acc + (i.status === 'paid' ? 0 : i.totalAmount), 0);
+  // Crédito lo que sea que ya se haya cobrado, sin importar el estado (specs/003, misma
+  // corrección que packages/data-supabase/src/SupabaseClientRepository.ts).
+  const balance = loan.installments.reduce((acc, i) => acc + (i.totalAmount - (i.paidAmount ?? 0)), 0);
+  const canPayoff = loan.status === 'active' && balance > 0;
+
+  async function handlePayoff() {
+    Alert.alert('Liquidar anticipadamente', `Se cobrará el saldo restante de $${formatMoney(balance)} y el préstamo quedará liquidado. ¿Confirmar?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        onPress: async () => {
+          try {
+            await payoffLoan.mutateAsync(loanId);
+          } catch {
+            Alert.alert('No se pudo liquidar', 'Puede que ya se haya liquidado desde otro dispositivo. Cerrá y volvé a intentar.');
+          }
+        },
+      },
+    ]);
+  }
 
   return (
     <ScrollView className="flex-1 bg-neutral-50" contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -53,6 +74,14 @@ export function LoanDetailScreen({ route }: Props) {
             <Text className="text-xs text-neutral-500">Saldo</Text>
           </View>
         </View>
+        {canPayoff && (
+          <Button
+            testID="loan-payoff-button"
+            label={payoffLoan.isPending ? 'Liquidando…' : 'Liquidar anticipadamente'}
+            onPress={handlePayoff}
+            loading={payoffLoan.isPending}
+          />
+        )}
       </Card>
 
       <Text className="text-xs font-bold uppercase text-neutral-400">Cronograma</Text>
@@ -64,7 +93,10 @@ export function LoanDetailScreen({ route }: Props) {
         >
           <View>
             <Text className="font-bold text-brand-ink">Cuota {installment.number}</Text>
-            <Text className="text-xs text-neutral-500">${formatMoney(installment.totalAmount)}</Text>
+            <Text className="text-xs text-neutral-500">
+              ${formatMoney(installment.totalAmount)}
+              {installment.status === 'partial' && ` · faltan $${formatMoney(installment.totalAmount - (installment.paidAmount ?? 0))}`}
+            </Text>
           </View>
           {installment.status === 'paid' ? (
             <Badge label="Pagado" tone="alDia" />
@@ -74,12 +106,12 @@ export function LoanDetailScreen({ route }: Props) {
               onPress={() =>
                 setSelectedInstallment({
                   id: installment.id,
-                  amount: installment.totalAmount,
+                  amount: Math.round((installment.totalAmount - (installment.paidAmount ?? 0) + Number.EPSILON) * 100) / 100,
                   label: `Cuota ${installment.number} de ${loan.installments.length} · ${client?.name ?? ''}`,
                 })
               }
             >
-              <Badge label="Cobrar" tone="cobroHoy" />
+              <Badge label={installment.status === 'partial' ? 'Parcial' : 'Cobrar'} tone={installment.status === 'partial' ? 'neutral' : 'cobroHoy'} />
             </Pressable>
           )}
         </View>
@@ -90,7 +122,7 @@ export function LoanDetailScreen({ route }: Props) {
           visible
           onClose={() => setSelectedInstallment(null)}
           installmentId={selectedInstallment.id}
-          installmentAmount={selectedInstallment.amount}
+          remainingBalance={selectedInstallment.amount}
           subtitle={selectedInstallment.label}
         />
       )}

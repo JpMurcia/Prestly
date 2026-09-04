@@ -1,4 +1,4 @@
-import type { IPortfolioReader, PortfolioSummary } from '@repo/core';
+import type { IPortfolioReader, PortfolioSummary, PortfolioTrendPoint } from '@repo/core';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface CarteraResumenRow {
@@ -30,6 +30,22 @@ function toPortfolioSummary(row: CarteraResumenRow): PortfolioSummary {
   };
 }
 
+interface CarteraTendenciaRow {
+  periodo: string;
+  capital_prestado: number;
+  total_recuperado: number;
+  intereses_ganados: number;
+}
+
+function toPortfolioTrendPoint(row: CarteraTendenciaRow): PortfolioTrendPoint {
+  return {
+    period: row.periodo.slice(0, 7), // 'YYYY-MM-DD' → 'YYYY-MM'
+    principalLent: row.capital_prestado,
+    totalRecovered: row.total_recuperado,
+    interestEarned: row.intereses_ganados,
+  };
+}
+
 /** Implementación concreta de IPortfolioReader contra `VIEW cartera_resumen`
  * (specs/002-admin-web/data-model.md) — fila única, sin filtros. */
 export class SupabasePortfolioReader implements IPortfolioReader {
@@ -48,5 +64,16 @@ export class SupabasePortfolioReader implements IPortfolioReader {
 
     if (error) throw error;
     return toPortfolioSummary(data ?? VACIO);
+  }
+
+  async getTrend(): Promise<PortfolioTrendPoint[]> {
+    const { data, error } = await this.supabase
+      .from('cartera_tendencia_mensual')
+      .select('periodo, capital_prestado, total_recuperado, intereses_ganados')
+      .order('periodo', { ascending: true })
+      .returns<CarteraTendenciaRow[]>();
+
+    if (error) throw error;
+    return (data ?? []).map(toPortfolioTrendPoint);
   }
 }

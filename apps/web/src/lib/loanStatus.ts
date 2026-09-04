@@ -20,13 +20,13 @@ function startOfToday(): Date {
 export function deriveLoanStatus(loan: Loan): DerivedLoanStatus {
   const today = startOfToday();
 
-  const balance = loan.installments.reduce((acc, i) => {
-    const paid = i.status === 'paid' ? (i.paidAmount ?? i.totalAmount) : 0;
-    return acc + (i.totalAmount - paid);
-  }, 0);
+  // Crédito lo que sea que ya se haya cobrado, sin importar el estado (specs/003-operational-
+  // management/, corrección necesaria por pagos parciales — mismo ajuste que computePortfolio
+  // en packages/data-supabase/src/SupabaseClientRepository.ts).
+  const balance = loan.installments.reduce((acc, i) => acc + (i.totalAmount - (i.paidAmount ?? 0)), 0);
 
   const pending = loan.installments
-    .filter((i) => i.status === 'pending')
+    .filter((i) => i.status === 'pending' || i.status === 'partial')
     .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   const next = pending[0];
 

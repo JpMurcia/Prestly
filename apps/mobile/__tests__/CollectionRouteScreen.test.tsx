@@ -1,14 +1,15 @@
 import type { CollectionRouteEntry } from '@repo/core';
-import { renderScreen, screen, waitFor } from '../test-utils';
+import { fireEvent, renderScreen, screen, waitFor } from '../test-utils';
 import { CollectionRouteScreen } from '../src/screens/CollectionRouteScreen';
 import { loanRepository } from '../src/data/repositories';
 
 jest.mock('../src/data/repositories', () => ({
-  loanRepository: { listCollectionRoute: jest.fn() },
+  loanRepository: { listCollectionRoute: jest.fn(), registerInstallmentPayment: jest.fn() },
   clientRepository: {},
 }));
 
 const mockListCollectionRoute = loanRepository.listCollectionRoute as jest.Mock;
+const mockRegisterInstallmentPayment = loanRepository.registerInstallmentPayment as jest.Mock;
 
 function makeEntry(overrides: Partial<CollectionRouteEntry>): CollectionRouteEntry {
   return {
@@ -62,5 +63,30 @@ describe('CollectionRouteScreen', () => {
     await renderScreen(<CollectionRouteScreen />);
 
     await waitFor(() => expect(screen.getByTestId('route-empty-state')).toBeTruthy());
+  });
+
+  it('una cuota `partial` muestra y cobra su saldo restante, no su monto original (specs/003-operational-management, US1)', async () => {
+    mockListCollectionRoute.mockResolvedValue([
+      makeEntry({
+        installment: { ...makeEntry({}).installment, status: 'partial', paidAmount: 20 },
+        overdueDays: 1,
+      }),
+    ]);
+    mockRegisterInstallmentPayment.mockResolvedValue({ id: 'installment-1', status: 'paid' });
+
+    await renderScreen(<CollectionRouteScreen />);
+
+    // Saldo restante ($27.92), no el monto original de la cuota ($47.92).
+    await waitFor(() => expect(screen.getByTestId('route-summary-total')).toHaveTextContent('$27.92'));
+
+    await fireEvent.press(screen.getByTestId('route-collect-installment-1'));
+    await waitFor(() => expect(screen.getByTestId('payment-modal-due')).toHaveTextContent('$27.92'));
+
+    // Un pago parcial de $10 sobre el saldo restante de $27.92 debe registrarse tal cual,
+    // no rechazarse (a diferencia de FR-014 de specs/001-mobile-field-app/).
+    await fireEvent.changeText(screen.getByTestId('payment-modal-received'), '10');
+    await fireEvent.press(screen.getByTestId('payment-modal-confirm'));
+
+    await waitFor(() => expect(mockRegisterInstallmentPayment).toHaveBeenCalledWith('installment-1', 10));
   });
 });

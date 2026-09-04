@@ -60,6 +60,37 @@ describe('SupabaseClientRepository', () => {
     expect(orSpy).toHaveBeenCalledWith(expect.stringContaining('rosa'));
   });
 
+  it('descuenta del saldo lo ya cobrado de una cuota `parcial`, no solo de las `pagado` (specs/003-operational-management, corrección de computePortfolio)', async () => {
+    const row = {
+      id: 'c1',
+      nombre: 'Rosa Delgado',
+      telefono: '+1 809 555 0142',
+      direccion: null,
+      notas_privadas: null,
+      notas_actualizadas_en: null,
+      creado_en: '2026-01-01T00:00:00.000Z',
+      prestamos: [
+        {
+          id: 'p1',
+          capital: 500,
+          num_cuotas: 2,
+          cuotas: [
+            { id: 'cu1', estado: 'parcial', fecha_vencimiento: '2099-01-01', monto_cuota: 47.92, monto_pagado: 20 },
+            { id: 'cu2', estado: 'pendiente', fecha_vencimiento: '2099-01-08', monto_cuota: 47.92, monto_pagado: null },
+          ],
+        },
+      ],
+    };
+    const supabase = fakeSupabase({ data: row, error: null });
+    const repo = new SupabaseClientRepository(supabase as never);
+
+    const client = await repo.findById('c1');
+
+    // Saldo total de las 2 cuotas ($95.84) menos lo ya cobrado en la parcial ($20) = $75.84 —
+    // no $95.84 (que ignoraría el abono parcial) ni $47.92 (que la trataría como pagada).
+    expect(client?.portfolio?.balance).toBeCloseTo(75.84, 2);
+  });
+
   it('propaga el error de Supabase en vez de tragárselo', async () => {
     const supabase = fakeSupabase({ data: null, error: { message: 'boom' } });
     const repo = new SupabaseClientRepository(supabase as never);

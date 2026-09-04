@@ -43,4 +43,29 @@ describe('SupabasePortfolioReader', () => {
     expect(summary.overdueAmount).toBe(0);
     expect(summary.principalLent).toBe(0);
   });
+
+  it('getTrend mapea las filas de `cartera_tendencia_mensual` a PortfolioTrendPoint[] (specs/003-operational-management, US3)', async () => {
+    const rows = [
+      { periodo: '2026-08-01', capital_prestado: 1000, total_recuperado: 200, intereses_ganados: 30 },
+      { periodo: '2026-09-01', capital_prestado: 500, total_recuperado: 47.92, intereses_ganados: 6.25 },
+    ];
+    const supabase = fakeSupabase({ data: rows, error: null });
+    const reader = new SupabasePortfolioReader(supabase as never);
+
+    const trend = await reader.getTrend();
+
+    expect(trend).toEqual([
+      { period: '2026-08', principalLent: 1000, totalRecovered: 200, interestEarned: 30 },
+      { period: '2026-09', principalLent: 500, totalRecovered: 47.92, interestEarned: 6.25 },
+    ]);
+  });
+
+  it('getTrend con cartera sin actividad devuelve un arreglo vacío, no un error (edge case de spec.md)', async () => {
+    const supabase = fakeSupabase({ data: [], error: null });
+    const reader = new SupabasePortfolioReader(supabase as never);
+
+    const trend = await reader.getTrend();
+
+    expect(trend).toEqual([]);
+  });
 });

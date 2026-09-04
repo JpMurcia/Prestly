@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LoanAmortizationPage } from '../src/pages/LoanAmortizationPage';
 
 vi.mock('../src/data/repositories', () => ({
-  loanRepository: { findById: vi.fn(), markInstallmentPaid: vi.fn() },
+  loanRepository: { findById: vi.fn(), registerInstallmentPayment: vi.fn(), payoffLoan: vi.fn() },
 }));
 
 import { loanRepository } from '../src/data/repositories';
@@ -71,9 +71,9 @@ describe('LoanAmortizationPage', () => {
     expect(screen.getByText('$500.00', { exact: false })).toBeInTheDocument();
   });
 
-  it('registrar el cobro de una cuota pendiente la marca como pagada de inmediato (spec.md, US2, escenario 3)', async () => {
+  it('registrar el cobro completo de una cuota pendiente la marca como pagada de inmediato (spec.md US2 esc. 3 de specs/002-admin-web/)', async () => {
     vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
-    vi.mocked(loanRepository.markInstallmentPaid).mockResolvedValue({
+    vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
       ...LOAN.installments[1]!,
       status: 'paid',
       paidAt: new Date('2026-01-15'),
@@ -84,8 +84,77 @@ describe('LoanAmortizationPage', () => {
 
     const user = userEvent.setup();
     const registerButton = await screen.findByRole('button', { name: /registrar/i });
+    // El input de monto ya viene precargado con el saldo restante completo — un clic directo
+    // registra un pago total, igual comportamiento que antes de specs/003-operational-management/.
     await user.click(registerButton);
 
-    await waitFor(() => expect(loanRepository.markInstallmentPaid).toHaveBeenCalledWith('cu2'));
+    await waitFor(() => expect(loanRepository.registerInstallmentPayment).toHaveBeenCalledWith('cu2', 47.92));
+  });
+
+  it('registrar un monto menor al saldo restante registra un pago parcial (specs/003-operational-management/, US1, escenario 1)', async () => {
+    vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
+      ...LOAN.installments[1]!,
+      status: 'partial',
+      paidAmount: 20,
+    });
+
+    renderPage();
+
+    const user = userEvent.setup();
+    const amountInput = await screen.findByLabelText(/monto a registrar para la cuota 2/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, '20');
+
+    const registerButton = screen.getByRole('button', { name: /registrar/i });
+    await user.click(registerButton);
+
+    await waitFor(() => expect(loanRepository.registerInstallmentPayment).toHaveBeenCalledWith('cu2', 20));
+  });
+
+  it('tras un pago parcial, el input vuelve a precargarse con el NUEVO saldo restante en vez de reenviar el monto anterior (regresión encontrada en verificación manual)', async () => {
+    vi.mocked(loanRepository.findById)
+      .mockResolvedValueOnce(LOAN)
+      .mockResolvedValue({
+        ...LOAN,
+        installments: [LOAN.installments[0]!, { ...LOAN.installments[1]!, status: 'partial' as const, paidAmount: 20 }],
+      });
+    vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
+      ...LOAN.installments[1]!,
+      status: 'partial',
+      paidAmount: 20,
+    });
+
+    renderPage();
+
+    const user = userEvent.setup();
+    const amountInput = await screen.findByLabelText(/monto a registrar para la cuota 2/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, '20');
+    await user.click(screen.getByRole('button', { name: /registrar/i }));
+
+    await waitFor(() => expect(loanRepository.registerInstallmentPayment).toHaveBeenCalledWith('cu2', 20));
+
+    // Tras refrescar (saldo restante ahora $27.92), el input debe mostrar ese nuevo saldo —
+    // no seguir mostrando "20" (el bug: reenviaría el mismo monto en vez del saldo actual).
+    await waitFor(() => expect(screen.getByLabelText(/monto a registrar para la cuota 2/i)).toHaveValue(27.92));
+  });
+
+  it('liquidar anticipadamente muestra el saldo restante antes de confirmar y luego liquida el préstamo (specs/003-operational-management/, US2)', async () => {
+    vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(loanRepository.payoffLoan).mockResolvedValue({ ...LOAN, status: 'settled' });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderPage();
+
+    const user = userEvent.setup();
+    // El saldo restante del préstamo de prueba es solo el de la cuota 2 (la 1 ya está pagada).
+    const payoffButton = await screen.findByRole('button', { name: /liquidar anticipadamente \(\$47\.92\)/i });
+    await user.click(payoffButton);
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('$47.92'));
+    await waitFor(() => expect(loanRepository.payoffLoan).toHaveBeenCalledWith('p1'));
+
+    confirmSpy.mockRestore();
   });
 });

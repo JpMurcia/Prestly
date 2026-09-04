@@ -32,7 +32,7 @@ interface PrestamoActivoRow {
 
 interface CuotaRow {
   id: string;
-  estado: 'pendiente' | 'pagado';
+  estado: 'pendiente' | 'parcial' | 'pagado';
   fecha_vencimiento: string;
   monto_cuota: number;
   monto_pagado: number | null;
@@ -54,13 +54,15 @@ function computePortfolio(prestamo: PrestamoActivoRow | undefined, today: Date):
 
   const cuotas = prestamo.cuotas ?? [];
   const installmentsPaid = cuotas.filter((c) => c.estado === 'pagado').length;
-  const balance = cuotas.reduce((acc, c) => {
-    const pagado = c.estado === 'pagado' ? (c.monto_pagado ?? c.monto_cuota) : 0;
-    return acc + (c.monto_cuota - pagado);
-  }, 0);
+  // Crédito lo que sea que ya se haya cobrado, sin importar el estado — para 'pendiente' es
+  // 0/null, para 'parcial' es el acumulado recibido, para 'pagado' es el monto total
+  // (specs/003-operational-management/, corrección necesaria por pagos parciales).
+  const balance = cuotas.reduce((acc, c) => acc + (c.monto_cuota - (c.monto_pagado ?? 0)), 0);
 
+  // 'parcial' cuenta como pendiente para efectos de "próxima cuota" — una cuota parcialmente
+  // pagada sigue debiendo el resto y sigue pudiendo estar en mora (specs/003, corrección).
   const pendientes = cuotas
-    .filter((c) => c.estado === 'pendiente')
+    .filter((c) => c.estado === 'pendiente' || c.estado === 'parcial')
     .sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento));
   const proxima = pendientes[0];
 
@@ -90,7 +92,13 @@ function computePortfolio(prestamo: PrestamoActivoRow | undefined, today: Date):
     overdueDays,
     nextDueDate,
     nextInstallmentId: proxima?.id,
-    nextInstallmentAmount: proxima?.monto_cuota,
+    // Saldo restante de esa cuota, no su monto original — para una 'parcial' ya se cobró
+    // parte (specs/003, mismo criterio que el botón "Registrar cobro $X" del drawer).
+    // Redondeado — la resta en punto flotante puede dar p.ej. 7.920000000000002 (encontrado
+    // en verificación manual), y este valor alimenta directamente el <input> del modal.
+    nextInstallmentAmount: proxima
+      ? Math.round((proxima.monto_cuota - (proxima.monto_pagado ?? 0) + Number.EPSILON) * 100) / 100
+      : undefined,
   };
 }
 

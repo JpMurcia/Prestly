@@ -43,6 +43,7 @@ const FREQUENCY_FROM_DB: Record<string, PaymentFrequency> = {
 
 const INSTALLMENT_STATUS_FROM_DB: Record<string, InstallmentStatus> = {
   pendiente: 'pending',
+  parcial: 'partial',
   pagado: 'paid',
 };
 
@@ -53,7 +54,7 @@ interface CuotaRow {
   monto_capital: number;
   monto_interes: number;
   monto_cuota: number;
-  estado: 'pendiente' | 'pagado';
+  estado: 'pendiente' | 'parcial' | 'pagado';
   fecha_pago: string | null;
   monto_pagado: number | null;
 }
@@ -124,6 +125,24 @@ export class InstallmentAlreadyPaidError extends Error {
   constructor(installmentId: string) {
     super(`La cuota ${installmentId} ya no está pendiente (pagada por otra sesión, o no existe).`);
     this.name = 'InstallmentAlreadyPaidError';
+  }
+}
+
+/** Se lanza cuando `registrar_cobro` recibe un monto que excede el saldo restante de la
+ * cuota (código `P0002` — specs/003-operational-management/, FR-004). */
+export class InvalidPaymentAmountError extends Error {
+  constructor(installmentId: string, amount: number) {
+    super(`El monto ${amount} excede el saldo restante de la cuota ${installmentId}.`);
+    this.name = 'InvalidPaymentAmountError';
+  }
+}
+
+/** Se lanza cuando `liquidar_prestamo` no encuentra el préstamo en estado `activo` (código
+ * `P0003` — specs/003-operational-management/, US2). */
+export class LoanNotActiveError extends Error {
+  constructor(loanId: string) {
+    super(`El préstamo ${loanId} no está activo (ya liquidado/cancelado, o no existe).`);
+    this.name = 'LoanNotActiveError';
   }
 }
 
@@ -198,16 +217,30 @@ export class SupabaseLoanRepository implements ILoanRepository {
     return data ? toLoan(data) : null;
   }
 
-  async markInstallmentPaid(installmentId: string): Promise<LoanInstallment> {
+  async registerInstallmentPayment(installmentId: string, amount: number): Promise<LoanInstallment> {
     const { data, error } = await this.supabase
-      .rpc('registrar_cobro', { p_cuota_id: installmentId })
+      .rpc('registrar_cobro', { p_cuota_id: installmentId, p_monto: amount })
       .single<CuotaRow>();
 
     if (error) {
       if (error.code === 'P0001') throw new InstallmentAlreadyPaidError(installmentId);
+      if (error.code === 'P0002') throw new InvalidPaymentAmountError(installmentId, amount);
       throw error;
     }
     return toLoanInstallment(data);
+  }
+
+  async payoffLoan(loanId: string): Promise<Loan> {
+    const { error } = await this.supabase.rpc('liquidar_prestamo', { p_prestamo_id: loanId }).single();
+
+    if (error) {
+      if (error.code === 'P0003') throw new LoanNotActiveError(loanId);
+      throw error;
+    }
+
+    const loan = await this.findById(loanId);
+    if (!loan) throw new Error('El préstamo se liquidó pero no se pudo releer (liquidar_prestamo).');
+    return loan;
   }
 
   async listCollectionRoute(referenceDate: Date): Promise<CollectionRouteEntry[]> {
@@ -219,7 +252,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
         'id, numero, fecha_vencimiento, monto_capital, monto_interes, monto_cuota, estado, fecha_pago, monto_pagado, ' +
           'prestamos!inner(id, estado, num_cuotas, clientes!inner(id, nombre, telefono))'
       )
-      .eq('estado', 'pendiente')
+      .in('estado', ['pendiente', 'parcial'])
       .eq('prestamos.estado', 'activo')
       .lte('fecha_vencimiento', today)
       .order('fecha_vencimiento', { ascending: true })

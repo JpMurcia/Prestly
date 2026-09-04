@@ -9,6 +9,7 @@ export function chainableResult(result: { data: unknown; error: unknown }) {
     insert: () => handler,
     update: () => handler,
     eq: () => handler,
+    in: () => handler,
     or: () => handler,
     lte: () => handler,
     order: () => handler,

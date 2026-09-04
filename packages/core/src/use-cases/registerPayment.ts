@@ -1,28 +1,22 @@
-/** Se lanza cuando el monto recibido es menor al de la cuota — FR-014, sin pagos parciales
- * en esta fase (spec.md raíz §1, "pagos parciales por cuota" fuera de alcance). */
-export class PartialPaymentNotAllowedError extends Error {
-  constructor(installmentAmount: number, receivedAmount: number) {
-    super(
-      `Monto recibido ($${receivedAmount.toFixed(2)}) es menor al de la cuota ($${installmentAmount.toFixed(2)}) — ` +
-        'los pagos parciales no están soportados en esta fase (FR-014).'
-    );
-    this.name = 'PartialPaymentNotAllowedError';
-  }
-}
-
 export interface RegisterPaymentResult {
+  /** Monto que realmente se aplica al saldo restante — el menor entre lo recibido y lo que
+   * faltaba, nunca más de lo que se debe (specs/003-operational-management/, FR-004). */
+  amountApplied: number;
+  /** Cambio a entregar en efectivo — solo positivo cuando lo recibido excede el saldo
+   * restante (mockup 1b, flujo "Efectivo"). */
   changeDue: number;
 }
 
 /**
- * Registrar el cobro de una cuota (US2, FR-008): calcula el cambio a entregar cuando el
- * monto recibido excede el de la cuota; rechaza montos por debajo (FR-014). Puro, sin I/O
- * — la persistencia real vive en ILoanRepository.markInstallmentPaid.
+ * Registrar el cobro de una cuota (specs/003-operational-management/, US1): calcula cuánto
+ * de lo recibido se aplica al saldo restante y cuánto cambio hay que entregar si el monto
+ * recibido lo excede. Un pago parcial (recibido < saldo restante) es válido — a diferencia de
+ * `spec.md` raíz §1/FR-014 de `specs/001-mobile-field-app/`, esta fase ya no lo rechaza; el
+ * monto que efectivamente se persiste es siempre `amountApplied`, nunca lo recibido en bruto.
+ * Puro, sin I/O — la persistencia real vive en ILoanRepository.registerInstallmentPayment.
  */
-export function registerPayment(installmentAmount: number, receivedAmount: number): RegisterPaymentResult {
-  if (receivedAmount < installmentAmount) {
-    throw new PartialPaymentNotAllowedError(installmentAmount, receivedAmount);
-  }
-  const changeDue = Math.round((receivedAmount - installmentAmount + Number.EPSILON) * 100) / 100;
-  return { changeDue };
+export function registerPayment(remainingBalance: number, receivedAmount: number): RegisterPaymentResult {
+  const amountApplied = Math.min(remainingBalance, receivedAmount);
+  const changeDue = Math.round((receivedAmount - amountApplied + Number.EPSILON) * 100) / 100;
+  return { amountApplied, changeDue };
 }

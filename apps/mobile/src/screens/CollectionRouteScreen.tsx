@@ -12,7 +12,12 @@ export function CollectionRouteScreen() {
   const { data: entries, isLoading } = useCollectionRoute();
   const [selected, setSelected] = useState<CollectionRouteEntry | null>(null);
 
-  const total = (entries ?? []).reduce((acc, e) => acc + e.installment.totalAmount, 0);
+  // Saldo restante de cada cuota, no su monto original — una cuota `parcial` ya entregó
+  // parte de lo esperado (specs/003-operational-management/, corrección por pagos parciales).
+  const total = (entries ?? []).reduce(
+    (acc, e) => acc + (e.installment.totalAmount - (e.installment.paidAmount ?? 0)),
+    0
+  );
 
   return (
     <View className="flex-1 bg-neutral-50 px-4 pt-4">
@@ -48,7 +53,9 @@ export function CollectionRouteScreen() {
           visible
           onClose={() => setSelected(null)}
           installmentId={selected.installment.id}
-          installmentAmount={selected.installment.totalAmount}
+          remainingBalance={
+            Math.round((selected.installment.totalAmount - (selected.installment.paidAmount ?? 0) + Number.EPSILON) * 100) / 100
+          }
           subtitle={`Cuota ${selected.installment.number} de ${selected.installmentCount} · ${selected.client.name}`}
         />
       )}
@@ -74,7 +81,9 @@ function RouteRow({ entry, onPress }: { entry: CollectionRouteEntry; onPress: ()
         </Text>
         <Badge label={isOverdue ? `Mora ${entry.overdueDays} días` : 'Vence hoy'} tone={isOverdue ? 'mora' : 'cobroHoy'} />
       </View>
-      <Text className="font-extrabold tabular-nums text-brand-ink">${formatMoney(entry.installment.totalAmount)}</Text>
+      <Text className="font-extrabold tabular-nums text-brand-ink">
+        ${formatMoney(entry.installment.totalAmount - (entry.installment.paidAmount ?? 0))}
+      </Text>
       <Pressable
         testID={`route-collect-${entry.installment.id}`}
         onPress={onPress}

@@ -19,7 +19,8 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
   const client = data?.client;
   const score = data?.score;
   const latestLoan = data?.loans[0];
-  const nextInstallment = latestLoan?.installments.find((i) => i.status === 'pending');
+  const nextInstallment = latestLoan?.installments.find((i) => i.status === 'pending' || i.status === 'partial');
+  const nextRemainingBalance = nextInstallment ? nextInstallment.totalAmount - (nextInstallment.paidAmount ?? 0) : 0;
 
   return (
     <div className="fixed inset-0 z-10 flex justify-end">
@@ -62,8 +63,8 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
 
             {nextInstallment && (
               <Button
-                label={`Registrar cobro ${formatCurrency(nextInstallment.totalAmount)}`}
-                onPress={() => registerPayment.mutate(nextInstallment.id)}
+                label={`Registrar cobro ${formatCurrency(nextRemainingBalance)}`}
+                onPress={() => registerPayment.mutate({ installmentId: nextInstallment.id, amount: nextRemainingBalance })}
                 loading={registerPayment.isPending}
               />
             )}
@@ -83,7 +84,7 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
                       <span className="text-neutral-500">{installment.dueDate.toLocaleDateString('es-DO')}</span>
                       <span className="tabular-nums">{formatCurrency(installment.totalAmount)}</span>
                       <span className={installment.status === 'paid' ? 'text-emerald-700' : 'text-neutral-400'}>
-                        {installment.status === 'paid' ? 'Pagado' : 'Pendiente'}
+                        {installment.status === 'paid' ? 'Pagado' : installment.status === 'partial' ? 'Parcial' : 'Pendiente'}
                       </span>
                     </div>
                   ))}

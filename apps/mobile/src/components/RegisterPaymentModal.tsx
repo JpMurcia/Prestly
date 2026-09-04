@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
-import { PartialPaymentNotAllowedError } from '@repo/core';
+import { registerPayment } from '@repo/core';
 import { Button, Chip } from '@repo/ui/native';
 
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
@@ -11,26 +11,33 @@ export interface RegisterPaymentModalProps {
   visible: boolean;
   onClose: () => void;
   installmentId: string;
-  installmentAmount: number;
+  /** Saldo restante de la cuota — el monto completo si está `pending`, o lo que falte si ya
+   * está `partial` (specs/003-operational-management/, US1). */
+  remainingBalance: number;
   subtitle: string;
 }
 
 type PaymentMethod = 'cash' | 'transfer';
 
 /** Modal "Registrar cobro" (mockup 1b) — reutilizado desde la ruta de cobranza (US2) y el
- * detalle de préstamo (Polish). Cambio calculado en vivo; sin pagos parciales (FR-014). */
-export function RegisterPaymentModal({ visible, onClose, installmentId, installmentAmount, subtitle }: RegisterPaymentModalProps) {
+ * detalle de préstamo. Cambio calculado en vivo para sobrepago en efectivo; un monto menor
+ * al saldo restante se registra como pago parcial (specs/003-operational-management/, US1 —
+ * ya no se rechaza como en FR-014 de specs/001-mobile-field-app/). */
+export function RegisterPaymentModal({ visible, onClose, installmentId, remainingBalance, subtitle }: RegisterPaymentModalProps) {
   const { isConnected } = useNetworkStatus();
   const registerPaymentMutation = useRegisterPayment();
-  const [receivedText, setReceivedText] = useState(String(installmentAmount));
+  // Redondeado defensivamente aquí también — protege contra un futuro llamador que olvide
+  // redondear su propia resta en punto flotante (encontrado en verificación manual).
+  const roundedRemainingBalance = Math.round((remainingBalance + Number.EPSILON) * 100) / 100;
+  const [receivedText, setReceivedText] = useState(String(roundedRemainingBalance));
   const [method, setMethod] = useState<PaymentMethod>('cash');
 
   const receivedAmount = Number(receivedText.replace(',', '.')) || 0;
-  const changeDue = Math.max(0, Math.round((receivedAmount - installmentAmount + Number.EPSILON) * 100) / 100);
-  const isPartial = receivedAmount > 0 && receivedAmount < installmentAmount;
+  const { amountApplied, changeDue } = registerPayment(roundedRemainingBalance, receivedAmount);
+  const isPartial = receivedAmount > 0 && receivedAmount < roundedRemainingBalance;
 
   function reset() {
-    setReceivedText(String(installmentAmount));
+    setReceivedText(String(roundedRemainingBalance));
     setMethod('cash');
   }
 
@@ -40,14 +47,10 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, installm
       return;
     }
     try {
-      await registerPaymentMutation.mutateAsync({ installmentId, installmentAmount, receivedAmount });
+      await registerPaymentMutation.mutateAsync({ installmentId, amount: amountApplied });
       reset();
       onClose();
-    } catch (error) {
-      if (error instanceof PartialPaymentNotAllowedError) {
-        Alert.alert('Monto insuficiente', error.message);
-        return;
-      }
+    } catch {
       Alert.alert(
         'No se pudo registrar el cobro',
         'Puede que ya se haya cobrado esta cuota desde otro dispositivo. Cerrá y volvé a intentar.'
@@ -69,9 +72,9 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, installm
 
           <View className="mb-3 flex-row gap-3">
             <View className="flex-1">
-              <Text className="mb-1 text-xs font-bold uppercase text-neutral-400">Monto de la cuota</Text>
+              <Text className="mb-1 text-xs font-bold uppercase text-neutral-400">Saldo restante</Text>
               <Text testID="payment-modal-due" className="rounded-lg border border-neutral-200 px-3 py-2 text-base text-neutral-500">
-                ${formatMoney(installmentAmount)}
+                ${formatMoney(roundedRemainingBalance)}
               </Text>
             </View>
             <View className="flex-1">
@@ -92,9 +95,9 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, installm
             </View>
           )}
           {isPartial && (
-            <View testID="payment-modal-partial-warning" className="mb-3 rounded-lg bg-[#FEF2F2] p-3">
-              <Text className="text-sm text-[#B91C1C]">
-                El monto recibido es menor al de la cuota — no se admiten pagos parciales.
+            <View testID="payment-modal-partial-warning" className="mb-3 rounded-lg bg-[#F1F5F9] p-3">
+              <Text className="text-sm text-[#475569]">
+                Se registrará como pago parcial — quedarán ${formatMoney(roundedRemainingBalance - amountApplied)} pendientes de esta cuota.
               </Text>
             </View>
           )}
@@ -116,7 +119,7 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, installm
             testID="payment-modal-confirm"
             label={registerPaymentMutation.isPending ? 'Confirmando…' : 'Confirmar cobro'}
             onPress={handleConfirm}
-            disabled={isPartial || receivedAmount <= 0}
+            disabled={receivedAmount <= 0}
             loading={registerPaymentMutation.isPending}
           />
         </View>

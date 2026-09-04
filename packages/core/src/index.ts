@@ -6,5 +6,5 @@ export { FlatRateFixedInstallmentStrategy } from './strategies/FlatRateFixedInst
 export { quoteLoan } from './use-cases/quoteLoan';
 export { issueLoan } from './use-cases/issueLoan';
 export type { IssueLoanDeps, IssueLoanInput } from './use-cases/issueLoan';
-export { registerPayment, PartialPaymentNotAllowedError } from './use-cases/registerPayment';
+export { registerPayment } from './use-cases/registerPayment';
 export type { RegisterPaymentResult } from './use-cases/registerPayment';

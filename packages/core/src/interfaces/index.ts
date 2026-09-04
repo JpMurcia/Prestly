@@ -104,13 +104,17 @@ export interface IClientWriter {
 
 export type LoanStrategy = 'flatFixedInstallment' | 'french';
 export type LoanStatus = 'active' | 'settled' | 'cancelled';
-export type InstallmentStatus = 'pending' | 'paid';
+/** 'partial' = specs/003-operational-management/, US1 — recibió al menos un pago pero no el
+ * monto total todavía. */
+export type InstallmentStatus = 'pending' | 'partial' | 'paid';
 export type PaymentMethod = 'cash' | 'transfer';
 
 export interface LoanInstallment extends Installment {
   id: string;
   status: InstallmentStatus;
+  /** Fecha en que llegó a 'paid' — no se mueve con abonos parciales intermedios. */
   paidAt?: Date;
+  /** Monto acumulado recibido hasta ahora (0 < paidAmount < totalAmount mientras 'partial'). */
   paidAmount?: number;
 }
 
@@ -166,9 +170,23 @@ export interface ILoanRepository {
   save(loan: NewLoan): Promise<Loan>;
   listByClient(clientId: string): Promise<Loan[]>;
   findActiveByClient(clientId: string): Promise<Loan | null>;
-  /** Marca una cuota como pagada por su monto exacto (FR-014: sin pagos parciales); falla
-   * si ya no está `pending` (guarda de concurrencia, FR-013). */
-  markInstallmentPaid(installmentId: string): Promise<LoanInstallment>;
+  /**
+   * Registra un pago (total o parcial) sobre una cuota pendiente o parcial, por el monto
+   * indicado. Un pago total es simplemente `amount` == saldo restante — no hay un método
+   * separado para "pagar completo" (specs/003-operational-management/, US1, FR-001/FR-003/
+   * FR-004). Rechaza (guarda de concurrencia) si el monto excede el saldo restante o si la
+   * cuota ya no admite pagos. REEMPLAZA a `markInstallmentPaid(installmentId)` de
+   * specs/001-002 — mismo procedimiento de base de datos extendido, no uno nuevo en paralelo.
+   */
+  registerInstallmentPayment(installmentId: string, amount: number): Promise<LoanInstallment>;
+  /**
+   * Liquida anticipadamente un préstamo activo: paga el saldo restante de todas sus cuotas
+   * pendientes/parciales en una sola operación atómica y lo marca `settled`
+   * (specs/003-operational-management/, US2, FR-005/FR-006). El monto exacto a cobrar se
+   * deriva ANTES de llamar a este método sumando `totalAmount - (paidAmount ?? 0)` de las
+   * cuotas no pagadas del `Loan` ya cargado — no requiere una llamada de red aparte.
+   */
+  payoffLoan(loanId: string): Promise<Loan>;
   /** Cuotas vencidas o que vencen hoy de préstamos activos, ordenadas por prioridad (FR-007). */
   listCollectionRoute(referenceDate: Date): Promise<CollectionRouteEntry[]>;
   /** Todos los préstamos activos, de cualquier cliente (specs/002-admin-web/, US2, FR-002) —
@@ -187,8 +205,22 @@ export interface PortfolioSummary {
   overdueClients: number;
 }
 
+/** Un punto de la serie mensual de tendencia (specs/003-operational-management/, US3,
+ * FR-008) — un mes calendario con actividad de préstamos y/o cobros. */
+export interface PortfolioTrendPoint {
+  /** 'YYYY-MM' */
+  period: string;
+  principalLent: number;
+  totalRecovered: number;
+  interestEarned: number;
+}
+
 // ISP (constitución Principio I): interfaz separada de ILoanRepository/IClientReader — el
 // dashboard solo necesita este agregado de solo-lectura, nada de las demás operaciones.
 export interface IPortfolioReader {
   getSummary(): Promise<PortfolioSummary>;
+  /** Serie mensual para el panel de tendencia (specs/003-operational-management/, US3,
+   * FR-008). Se añade aquí (no una interfaz nueva) — mismo agregado de solo-lectura de
+   * cartera que getSummary, no una operación distinta que justifique ISP separado. */
+  getTrend(): Promise<PortfolioTrendPoint[]>;
 }

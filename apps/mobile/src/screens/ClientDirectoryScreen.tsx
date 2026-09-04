@@ -99,7 +99,7 @@ export function ClientDirectoryScreen() {
           visible
           onClose={() => setCollecting(null)}
           installmentId={collecting.portfolio.nextInstallmentId}
-          installmentAmount={collecting.portfolio.nextInstallmentAmount ?? 0}
+          remainingBalance={collecting.portfolio.nextInstallmentAmount ?? 0}
           subtitle={collecting.name}
         />
       )}
