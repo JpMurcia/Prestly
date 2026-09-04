@@ -125,7 +125,18 @@ DECLARE
   v_collect      net.http_response_result;
   v_estado       TEXT;
   v_detalle      TEXT;
+  v_notif_id     UUID;
 BEGIN
+  -- Evita que dos corridas se pisen (el cron diario solapándose con una verificación manual,
+  -- o dos disparos del cron si uno quedó colgado) — sin esto, ambas podrían pasar la
+  -- comprobación de elegibilidad antes de que cualquiera alcance a reclamar la fila, y las dos
+  -- terminarían enviando el mismo WhatsApp real (supabase-postgres-best-practices,
+  -- lock-advisory). Se libera solo al terminar la transacción (la llamada completa a esta
+  -- función), no hace falta desbloquear a mano.
+  IF NOT pg_try_advisory_xact_lock(hashtext('whatsapp_cobros_review')) THEN
+    RETURN;
+  END IF;
+
   SELECT ecw.conectado, ecw.numero_desde INTO v_conectado, v_numero_desde FROM estado_configuracion_whatsapp() ecw;
 
   IF v_conectado THEN
@@ -134,6 +145,9 @@ BEGIN
     v_auth_header := 'Basic ' || encode(convert_to(v_sid || ':' || v_token, 'utf8'), 'base64');
   END IF;
 
+  -- Ya no filtra por NOT EXISTS aquí — el INSERT ... ON CONFLICT DO NOTHING de más abajo es
+  -- ahora el único punto de verdad de "¿ya se procesó esta cuota+tipo?", reclamado ANTES de
+  -- enviar nada (ver nota debajo del loop).
   FOR v_row IN
     SELECT cu.id AS cid, cu.numero, cl.id AS clid, cl.nombre, cl.telefono, 'recordatorio'::text AS notif_tipo
     FROM cuotas cu
@@ -141,7 +155,6 @@ BEGIN
     JOIN clientes cl ON cl.id = p.cliente_id
     WHERE cu.estado IN ('pendiente', 'parcial')
       AND cu.fecha_vencimiento BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day'
-      AND NOT EXISTS (SELECT 1 FROM notificaciones_whatsapp n WHERE n.cuota_id = cu.id AND n.tipo = 'recordatorio')
 
     UNION ALL
 
@@ -151,7 +164,6 @@ BEGIN
     JOIN clientes cl ON cl.id = p.cliente_id
     WHERE cu.estado IN ('pendiente', 'parcial')
       AND cu.fecha_vencimiento < CURRENT_DATE
-      AND NOT EXISTS (SELECT 1 FROM notificaciones_whatsapp n WHERE n.cuota_id = cu.id AND n.tipo = 'mora')
   LOOP
     -- Normalización de teléfono (data-model.md): solo dígitos y un '+' inicial; inválido si el
     -- conteo de dígitos no está entre 8 y 15 — se omite sin generar fila ni error (FR-010).
@@ -162,6 +174,21 @@ BEGIN
 
     IF length(regexp_replace(v_telefono, '[^0-9]', '', 'g')) NOT BETWEEN 8 AND 15 THEN
       CONTINUE;
+    END IF;
+
+    -- Reclama la fila ANTES de enviar nada (supabase-postgres-best-practices, data-upsert):
+    -- "verificar y luego insertar" es una condición de carrera — dos corridas concurrentes
+    -- podrían ver ambas que la cuota no tiene notificación todavía y las dos enviarían un
+    -- WhatsApp real antes de que el INSERT de cualquiera se ejecute. Reclamando primero (con
+    -- un estado provisional) y actualizando después, como mucho una corrida gana la fila; la
+    -- otra ve NULL en v_notif_id y pasa a la siguiente cuota sin haber llamado a Twilio.
+    INSERT INTO notificaciones_whatsapp (cuota_id, cliente_id, tipo, estado)
+    VALUES (v_row.cid, v_row.clid, v_row.notif_tipo, 'simulado')
+    ON CONFLICT (cuota_id, tipo) DO NOTHING
+    RETURNING id INTO v_notif_id;
+
+    IF v_notif_id IS NULL THEN
+      CONTINUE; -- ya reclamada por una corrida anterior (o esta misma cuota ya fue notificada)
     END IF;
 
     v_mensaje := CASE v_row.notif_tipo
@@ -186,14 +213,11 @@ BEGIN
         v_estado := 'fallido';
         v_detalle := COALESCE(v_collect.response.body, v_collect.message, 'sin detalle');
       END IF;
-    ELSE
-      v_estado := 'simulado';
-      v_detalle := NULL;
-    END IF;
 
-    INSERT INTO notificaciones_whatsapp (cuota_id, cliente_id, tipo, estado, detalle)
-    VALUES (v_row.cid, v_row.clid, v_row.notif_tipo, v_estado, v_detalle)
-    ON CONFLICT (cuota_id, tipo) DO NOTHING;
+      UPDATE notificaciones_whatsapp SET estado = v_estado, detalle = v_detalle WHERE id = v_notif_id;
+    ELSE
+      v_estado := 'simulado'; -- ya quedó así desde el INSERT, no hace falta un UPDATE aparte
+    END IF;
 
     out_cuota_id := v_row.cid;
     out_tipo := v_row.notif_tipo;
