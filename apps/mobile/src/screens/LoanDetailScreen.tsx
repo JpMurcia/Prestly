@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { LoanInstallment } from '@repo/core';
+import { buildLoanShareMessage, buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
 import { Badge, Button, Card, ProgressBar } from '@repo/ui/native';
 
 import { useLoan } from '../hooks/useLoan';
@@ -38,6 +40,39 @@ export function LoanDetailScreen({ route }: Props) {
   // corrección que packages/data-supabase/src/SupabaseClientRepository.ts).
   const balance = loan.installments.reduce((acc, i) => acc + (i.totalAmount - (i.paidAmount ?? 0)), 0);
   const canPayoff = loan.status === 'active' && balance > 0;
+
+  const loanShareLink =
+    client && loan.installments[0]
+      ? buildWhatsAppShareLink(
+          client.phone,
+          buildLoanShareMessage({
+            clientName: client.name,
+            principalFormatted: formatMoney(loan.principal),
+            installmentCount: loan.installments.length,
+            firstDueDateFormatted: loan.installments[0].dueDate.toLocaleDateString('es'),
+          })
+        )
+      : null;
+
+  const receiptShareLink = (installment: LoanInstallment): string | null => {
+    if (!client) return null;
+    const paid = installment.paidAmount ?? installment.totalAmount;
+    const message = buildReceiptMessage({
+      clientName: client.name,
+      installmentNumber: installment.number,
+      installmentCount: loan.installments.length,
+      amountReceivedFormatted: formatMoney(paid),
+      isFullyPaid: installment.status === 'paid',
+      remainingBalanceFormatted:
+        installment.status === 'partial' ? formatMoney(installment.totalAmount - (installment.paidAmount ?? 0)) : undefined,
+    });
+    return buildWhatsAppShareLink(client.phone, message);
+  };
+
+  function openWhatsApp(link: string | null) {
+    if (!link) return;
+    Linking.openURL(link).catch(() => Alert.alert('No se pudo abrir WhatsApp', 'Verificá que WhatsApp esté instalado.'));
+  }
 
   async function handlePayoff() {
     Alert.alert('Liquidar anticipadamente', `Se cobrará el saldo restante de $${formatMoney(balance)} y el préstamo quedará liquidado. ¿Confirmar?`, [
@@ -82,6 +117,16 @@ export function LoanDetailScreen({ route }: Props) {
             loading={payoffLoan.isPending}
           />
         )}
+        <Pressable
+          testID="whatsapp-share-loan"
+          disabled={!loanShareLink}
+          onPress={() => openWhatsApp(loanShareLink)}
+          className="mt-2"
+        >
+          <Text className={loanShareLink ? 'text-center font-semibold text-brand-navy' : 'text-center text-neutral-300'}>
+            Compartir tabla por WhatsApp
+          </Text>
+        </Pressable>
       </Card>
 
       <Text className="text-xs font-bold uppercase text-neutral-400">Cronograma</Text>
@@ -98,22 +143,35 @@ export function LoanDetailScreen({ route }: Props) {
               {installment.status === 'partial' && ` · faltan $${formatMoney(installment.totalAmount - (installment.paidAmount ?? 0))}`}
             </Text>
           </View>
-          {installment.status === 'paid' ? (
-            <Badge label="Pagado" tone="alDia" />
-          ) : (
-            <Pressable
-              testID={`loan-installment-collect-${installment.number}`}
-              onPress={() =>
-                setSelectedInstallment({
-                  id: installment.id,
-                  amount: Math.round((installment.totalAmount - (installment.paidAmount ?? 0) + Number.EPSILON) * 100) / 100,
-                  label: `Cuota ${installment.number} de ${loan.installments.length} · ${client?.name ?? ''}`,
-                })
-              }
-            >
-              <Badge label={installment.status === 'partial' ? 'Parcial' : 'Cobrar'} tone={installment.status === 'partial' ? 'neutral' : 'cobroHoy'} />
-            </Pressable>
-          )}
+          <View className="flex-row items-center gap-2">
+            {(installment.status === 'paid' || installment.status === 'partial') && (
+              <Pressable
+                testID={`whatsapp-receipt-${installment.number}`}
+                disabled={!receiptShareLink(installment)}
+                onPress={() => openWhatsApp(receiptShareLink(installment))}
+              >
+                <Text className={receiptShareLink(installment) ? 'text-xs font-bold text-brand-navy' : 'text-xs text-neutral-300'}>
+                  WhatsApp
+                </Text>
+              </Pressable>
+            )}
+            {installment.status === 'paid' ? (
+              <Badge label="Pagado" tone="alDia" />
+            ) : (
+              <Pressable
+                testID={`loan-installment-collect-${installment.number}`}
+                onPress={() =>
+                  setSelectedInstallment({
+                    id: installment.id,
+                    amount: Math.round((installment.totalAmount - (installment.paidAmount ?? 0) + Number.EPSILON) * 100) / 100,
+                    label: `Cuota ${installment.number} de ${loan.installments.length} · ${client?.name ?? ''}`,
+                  })
+                }
+              >
+                <Badge label={installment.status === 'partial' ? 'Parcial' : 'Cobrar'} tone={installment.status === 'partial' ? 'neutral' : 'cobroHoy'} />
+              </Pressable>
+            )}
+          </View>
         </View>
       ))}
 

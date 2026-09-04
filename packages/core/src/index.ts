@@ -8,3 +8,7 @@ export { issueLoan } from './use-cases/issueLoan';
 export type { IssueLoanDeps, IssueLoanInput } from './use-cases/issueLoan';
 export { registerPayment } from './use-cases/registerPayment';
 export type { RegisterPaymentResult } from './use-cases/registerPayment';
+export { normalizePhoneForWhatsApp } from './whatsapp/normalizePhone';
+export { buildWhatsAppShareLink } from './whatsapp/buildShareLink';
+export { buildLoanShareMessage, buildReceiptMessage } from './whatsapp/buildMessages';
+export type { LoanShareMessageParams, ReceiptMessageParams } from './whatsapp/buildMessages';

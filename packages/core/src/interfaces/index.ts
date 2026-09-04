@@ -224,3 +224,46 @@ export interface IPortfolioReader {
    * cartera que getSummary, no una operación distinta que justifique ISP separado. */
   getTrend(): Promise<PortfolioTrendPoint[]>;
 }
+
+// ── Automatización WhatsApp (specs/004-whatsapp-automation/) ───────────────
+
+export type WhatsAppNotificationType = 'reminder' | 'overdue';
+export type WhatsAppNotificationResult = 'sent' | 'simulated' | 'failed';
+
+/** Una fila del historial de la revisión automática (Historia 1) — nunca generada por las
+ * acciones manuales de compartir (Historia 3), que no pasan por esta tabla. */
+export interface WhatsAppNotification {
+  id: string;
+  installmentId: string;
+  clientId: string;
+  type: WhatsAppNotificationType;
+  result: WhatsAppNotificationResult;
+  detail: string | null;
+  createdAt: Date;
+}
+
+export interface WhatsAppConfigStatus {
+  connected: boolean;
+  /** Solo el número de envío (no es secreto) — nunca el Account SID ni el Auth Token
+   * (FR-005: una vez guardada, la credencial no se vuelve a mostrar completa). */
+  fromNumber: string | null;
+}
+
+/**
+ * Configurar/consultar la conexión con Twilio (specs/004-whatsapp-automation/, Historia 2).
+ * A diferencia de IClientReader/IClientWriter, no se separa lectura de escritura aquí — hoy
+ * existe un único consumidor real (la pantalla de configuración) que siempre necesita ambas
+ * mitades juntas; separarlas sería una abstracción sin un segundo consumidor que la
+ * justifique (YAGNI, ver plan.md §Constitution Check).
+ */
+export interface IWhatsAppConfigRepository {
+  getStatus(): Promise<WhatsAppConfigStatus>;
+  saveCredentials(accountSid: string, authToken: string, fromNumber: string): Promise<void>;
+  clearCredentials(): Promise<void>;
+}
+
+// ISP: separada de IWhatsAppConfigRepository — el historial (Historia 1) puede tener un
+// consumidor distinto de la pantalla de configuración (Historia 2), a diferencia de esta.
+export interface IWhatsAppNotificationHistoryReader {
+  list(): Promise<WhatsAppNotification[]>;
+}

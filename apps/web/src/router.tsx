@@ -5,6 +5,7 @@ import { ClientDirectoryPage } from './pages/ClientDirectoryPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoanAmortizationPage } from './pages/LoanAmortizationPage';
 import { QuoteCalculatorPage } from './pages/QuoteCalculatorPage';
+import { WhatsAppConfigPage } from './pages/WhatsAppConfigPage';
 
 /**
  * Rutas de nivel superior (spec.md, mockups 1c/2e: la barra de direcciones asume URLs
@@ -21,6 +22,7 @@ export const router = createBrowserRouter([
       { path: '/prestamos/:id', element: <LoanAmortizationPage /> },
       { path: '/clientes', element: <ClientDirectoryPage /> },
       { path: '/calculadora', element: <QuoteCalculatorPage /> },
+      { path: '/whatsapp', element: <WhatsAppConfigPage /> },
     ],
   },
 ]);

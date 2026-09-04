@@ -41,6 +41,14 @@ describe('QuoteCalculatorPage', () => {
       phone: '8095551234',
       createdAt: new Date(),
     });
+    // Consultado tras emitir para el botón "Compartir tabla por WhatsApp"
+    // (specs/004-whatsapp-automation/, Historia 3).
+    vi.mocked(clientRepository.findById).mockResolvedValue({
+      id: 'c-new',
+      name: 'Cliente Nuevo',
+      phone: '8095551234',
+      createdAt: new Date(),
+    });
     vi.mocked(loanRepository.save).mockResolvedValue({
       id: 'p-new',
       clientId: 'c-new',
@@ -64,5 +72,10 @@ describe('QuoteCalculatorPage', () => {
 
     await screen.findByText(/préstamo emitido/i);
     expect(loanRepository.save).toHaveBeenCalled();
+
+    // specs/004-whatsapp-automation/, Historia 3: enlace wa.me listo apenas se emite, sin
+    // ninguna acción adicional del usuario.
+    const shareLink = await screen.findByTestId('whatsapp-share-loan');
+    expect(shareLink).toHaveAttribute('href', expect.stringContaining('https://wa.me/8095551234'));
   });
 });

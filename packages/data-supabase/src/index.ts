@@ -9,3 +9,8 @@ export {
   LoanNotActiveError,
 } from './SupabaseLoanRepository';
 export { SupabasePortfolioReader } from './SupabasePortfolioReader';
+export {
+  SupabaseWhatsAppConfigRepository,
+  IncompleteWhatsAppCredentialsError,
+} from './SupabaseWhatsAppConfigRepository';
+export { SupabaseWhatsAppNotificationHistoryReader } from './SupabaseWhatsAppNotificationHistoryReader';

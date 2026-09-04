@@ -1,7 +1,10 @@
 import type { LoanInstallment } from '@repo/core';
+import { buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
 import { Badge, Button } from '@repo/ui/web';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { clientRepository } from '../data/repositories';
 import { useLoanAmortization } from '../hooks/useLoanAmortization';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
 import { usePayoffLoan } from '../hooks/usePayoffLoan';
@@ -31,6 +34,11 @@ function remainingBalance(installment: LoanInstallment): number {
 export function LoanAmortizationPage() {
   const { id } = useParams<{ id: string }>();
   const { data: loan, isLoading } = useLoanAmortization(id);
+  const { data: client } = useQuery({
+    queryKey: ['loanClient', loan?.clientId],
+    queryFn: () => clientRepository.findById(loan!.clientId),
+    enabled: !!loan,
+  });
   const registerPayment = useRegisterPayment();
   const payoffLoan = usePayoffLoan();
   const [filter, setFilter] = useState<FilterKey>('todas');
@@ -59,6 +67,21 @@ export function LoanAmortizationPage() {
 
   const loanBalance = loan.installments.reduce((acc, i) => acc + remainingBalance(i), 0);
   const canPayoff = loan.status === 'active' && loanBalance > 0;
+
+  const receiptShareLink = (installment: LoanInstallment): string | null => {
+    if (!client) return null;
+    const paid = installment.paidAmount ?? installment.totalAmount;
+    const message = buildReceiptMessage({
+      clientName: client.name,
+      installmentNumber: installment.number,
+      installmentCount: loan.installmentCount,
+      amountReceivedFormatted: formatCurrency(paid).replace('$', ''),
+      isFullyPaid: installment.status === 'paid',
+      remainingBalanceFormatted:
+        installment.status === 'partial' ? formatCurrency(remainingBalance(installment)).replace('$', '') : undefined,
+    });
+    return buildWhatsAppShareLink(client.phone, message);
+  };
 
   function amountFor(installment: LoanInstallment): number {
     const raw = amounts[installment.id];
@@ -164,27 +187,48 @@ export function LoanAmortizationPage() {
                   )}
                 </td>
                 <td className="px-5 text-right">
-                  {installment.status !== 'paid' && (
-                    <div className="ml-auto flex w-fit items-center gap-1.5">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        max={remainingBalance(installment)}
-                        aria-label={`Monto a registrar para la cuota ${installment.number}`}
-                        value={amounts[installment.id] ?? String(remainingBalance(installment))}
-                        onChange={(e) => setAmounts((prev) => ({ ...prev, [installment.id]: e.target.value }))}
-                        className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right text-[11.5px] tabular-nums"
-                      />
-                      <Button
-                        label="Registrar"
-                        variant="primary"
-                        loading={registerPayment.isPending && registerPayment.variables?.installmentId === installment.id}
-                        onPress={() => handleRegister(installment)}
-                        className="w-fit px-3 py-1.5"
-                      />
-                    </div>
-                  )}
+                  <div className="ml-auto flex w-fit items-center gap-1.5">
+                    {installment.status !== 'paid' && (
+                      <>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          max={remainingBalance(installment)}
+                          aria-label={`Monto a registrar para la cuota ${installment.number}`}
+                          value={amounts[installment.id] ?? String(remainingBalance(installment))}
+                          onChange={(e) => setAmounts((prev) => ({ ...prev, [installment.id]: e.target.value }))}
+                          className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right text-[11.5px] tabular-nums"
+                        />
+                        <Button
+                          label="Registrar"
+                          variant="primary"
+                          loading={registerPayment.isPending && registerPayment.variables?.installmentId === installment.id}
+                          onPress={() => handleRegister(installment)}
+                          className="w-fit px-3 py-1.5"
+                        />
+                      </>
+                    )}
+                    {(installment.status === 'paid' || installment.status === 'partial') && (
+                      <a
+                        data-testid={`whatsapp-receipt-${installment.number}`}
+                        href={receiptShareLink(installment) ?? undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-disabled={!receiptShareLink(installment)}
+                        title={!receiptShareLink(installment) ? 'Este cliente no tiene un teléfono utilizable' : undefined}
+                        onClick={(e) => {
+                          if (!receiptShareLink(installment)) e.preventDefault();
+                        }}
+                        className={[
+                          'rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[11px] font-bold',
+                          receiptShareLink(installment) ? 'text-emerald-700 hover:bg-emerald-50' : 'cursor-not-allowed text-neutral-300',
+                        ].join(' ')}
+                      >
+                        WhatsApp
+                      </a>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

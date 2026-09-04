@@ -3,6 +3,8 @@ import {
   SupabaseClientRepository,
   SupabaseLoanRepository,
   SupabasePortfolioReader,
+  SupabaseWhatsAppConfigRepository,
+  SupabaseWhatsAppNotificationHistoryReader,
 } from '@repo/data-supabase';
 
 /**
@@ -20,3 +22,5 @@ const supabase = createSupabaseClient(
 export const clientRepository = new SupabaseClientRepository(supabase);
 export const loanRepository = new SupabaseLoanRepository(supabase);
 export const portfolioReader = new SupabasePortfolioReader(supabase);
+export const whatsAppConfigRepository = new SupabaseWhatsAppConfigRepository(supabase);
+export const whatsAppNotificationHistoryReader = new SupabaseWhatsAppNotificationHistoryReader(supabase);

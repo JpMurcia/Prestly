@@ -1,7 +1,9 @@
 import type { PaymentFrequency } from '@repo/core';
-import { quoteLoan } from '@repo/core';
+import { buildLoanShareMessage, buildWhatsAppShareLink, quoteLoan } from '@repo/core';
 import { Button } from '@repo/ui/web';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { clientRepository } from '../data/repositories';
 import { useClientDirectory } from '../hooks/useClientDirectory';
 import { useIssueLoan } from '../hooks/useIssueLoan';
 import { formatCurrency } from '../lib/formatCurrency';
@@ -25,10 +27,15 @@ export function QuoteCalculatorPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string } | null>(null);
-  const [issuedLoanId, setIssuedLoanId] = useState<string | null>(null);
+  const [issuedLoan, setIssuedLoan] = useState<{ id: string; clientId: string } | null>(null);
 
   const issueLoan = useIssueLoan();
   const { data: existingClients } = useClientDirectory({ search: clientSearch || undefined });
+  const { data: issuedClient } = useQuery({
+    queryKey: ['loanClient', issuedLoan?.clientId],
+    queryFn: () => clientRepository.findById(issuedLoan!.clientId),
+    enabled: !!issuedLoan,
+  });
 
   const schedule = useMemo(
     () =>
@@ -60,9 +67,22 @@ export function QuoteCalculatorPage() {
         issueDate: new Date(),
         client,
       },
-      { onSuccess: (loan) => setIssuedLoanId(loan.id) }
+      { onSuccess: (loan) => setIssuedLoan({ id: loan.id, clientId: loan.clientId }) }
     );
   }
+
+  const loanShareLink =
+    issuedClient && schedule.installments[0]
+      ? buildWhatsAppShareLink(
+          issuedClient.phone,
+          buildLoanShareMessage({
+            clientName: issuedClient.name,
+            principalFormatted: formatCurrency(principal).replace('$', ''),
+            installmentCount,
+            firstDueDateFormatted: schedule.installments[0].dueDate.toLocaleDateString('es-DO'),
+          })
+        )
+      : null;
 
   return (
     <div className="flex flex-col gap-6 p-8">
@@ -114,7 +134,7 @@ export function QuoteCalculatorPage() {
           <SummaryRow label="Interés total" value={formatCurrency(schedule.totalInterest)} />
           <SummaryRow label="Total a pagar" value={formatCurrency(schedule.totalToPay)} />
 
-          {!issuedLoanId ? (
+          {!issuedLoan ? (
             <div className="mt-4 flex flex-col gap-3 border-t border-neutral-100 pt-4">
               <div className="flex gap-1 self-start rounded-[9px] bg-neutral-100 p-1">
                 <ModeTab label="Cliente nuevo" active={clientMode === 'nuevo'} onClick={() => setClientMode('nuevo')} />
@@ -176,9 +196,26 @@ export function QuoteCalculatorPage() {
               <Button label="Emitir este préstamo" onPress={handleIssue} loading={issueLoan.isPending} disabled={!canIssue} />
             </div>
           ) : (
-            <p className="mt-4 border-t border-neutral-100 pt-4 text-sm font-semibold text-emerald-700">
-              Préstamo emitido — #{issuedLoanId.slice(0, 8)}
-            </p>
+            <div className="mt-4 flex flex-col items-start gap-2 border-t border-neutral-100 pt-4">
+              <p className="text-sm font-semibold text-emerald-700">Préstamo emitido — #{issuedLoan.id.slice(0, 8)}</p>
+              <a
+                data-testid="whatsapp-share-loan"
+                href={loanShareLink ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={!loanShareLink}
+                title={!loanShareLink ? 'Este cliente no tiene un teléfono utilizable' : undefined}
+                onClick={(e) => {
+                  if (!loanShareLink) e.preventDefault();
+                }}
+                className={[
+                  'rounded-lg border border-neutral-200 px-3 py-1.5 text-[12.5px] font-bold',
+                  loanShareLink ? 'text-emerald-700 hover:bg-emerald-50' : 'cursor-not-allowed text-neutral-300',
+                ].join(' ')}
+              >
+                Compartir tabla por WhatsApp
+              </a>
+            </div>
           )}
         </div>
       </div>

@@ -7,9 +7,14 @@ import { LoanAmortizationPage } from '../src/pages/LoanAmortizationPage';
 
 vi.mock('../src/data/repositories', () => ({
   loanRepository: { findById: vi.fn(), registerInstallmentPayment: vi.fn(), payoffLoan: vi.fn() },
+  // Consultado para el botón "Enviar comprobante por WhatsApp" de cuotas pagadas/parciales
+  // (specs/004-whatsapp-automation/, Historia 3).
+  clientRepository: { findById: vi.fn() },
 }));
 
-import { loanRepository } from '../src/data/repositories';
+import { clientRepository, loanRepository } from '../src/data/repositories';
+
+const CLIENT = { id: 'c1', name: 'Cliente Uno', phone: '8095551234', createdAt: new Date('2026-01-01') };
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,6 +67,7 @@ const LOAN = {
 describe('LoanAmortizationPage', () => {
   it('muestra la tabla completa con totales (spec.md, US2, escenario 2)', async () => {
     vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
 
     renderPage();
 
@@ -73,6 +79,7 @@ describe('LoanAmortizationPage', () => {
 
   it('registrar el cobro completo de una cuota pendiente la marca como pagada de inmediato (spec.md US2 esc. 3 de specs/002-admin-web/)', async () => {
     vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
     vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
       ...LOAN.installments[1]!,
       status: 'paid',
@@ -93,6 +100,7 @@ describe('LoanAmortizationPage', () => {
 
   it('registrar un monto menor al saldo restante registra un pago parcial (specs/003-operational-management/, US1, escenario 1)', async () => {
     vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
     vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
       ...LOAN.installments[1]!,
       status: 'partial',
@@ -119,6 +127,7 @@ describe('LoanAmortizationPage', () => {
         ...LOAN,
         installments: [LOAN.installments[0]!, { ...LOAN.installments[1]!, status: 'partial' as const, paidAmount: 20 }],
       });
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
     vi.mocked(loanRepository.registerInstallmentPayment).mockResolvedValue({
       ...LOAN.installments[1]!,
       status: 'partial',
@@ -142,6 +151,7 @@ describe('LoanAmortizationPage', () => {
 
   it('liquidar anticipadamente muestra el saldo restante antes de confirmar y luego liquida el préstamo (specs/003-operational-management/, US2)', async () => {
     vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
     vi.mocked(loanRepository.payoffLoan).mockResolvedValue({ ...LOAN, status: 'settled' });
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
@@ -156,5 +166,31 @@ describe('LoanAmortizationPage', () => {
     await waitFor(() => expect(loanRepository.payoffLoan).toHaveBeenCalledWith('p1'));
 
     confirmSpy.mockRestore();
+  });
+
+  it('una cuota ya pagada muestra un enlace de WhatsApp con el comprobante correcto (specs/004-whatsapp-automation/, Historia 3)', async () => {
+    vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue(CLIENT);
+
+    renderPage();
+
+    await screen.findByTestId('whatsapp-receipt-1');
+    // El teléfono del cliente llega en una segunda consulta encadenada tras cargar el
+    // préstamo — el href se completa un instante después de que el botón ya existe.
+    await waitFor(() => expect(screen.getByTestId('whatsapp-receipt-1')).toHaveAttribute('href'));
+    const link = screen.getByTestId('whatsapp-receipt-1');
+    expect(link).toHaveAttribute('href', expect.stringContaining('https://wa.me/8095551234'));
+    expect(decodeURIComponent(link.getAttribute('href') ?? '')).toContain('pagada por completo');
+  });
+
+  it('un cliente sin teléfono utilizable deja el enlace de WhatsApp deshabilitado, sin href (FR-010)', async () => {
+    vi.mocked(loanRepository.findById).mockResolvedValue(LOAN);
+    vi.mocked(clientRepository.findById).mockResolvedValue({ ...CLIENT, phone: 'n/a' });
+
+    renderPage();
+
+    const link = await screen.findByTestId('whatsapp-receipt-1');
+    expect(link).toHaveAttribute('aria-disabled', 'true');
+    expect(link).not.toHaveAttribute('href');
   });
 });

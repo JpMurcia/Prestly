@@ -1,3 +1,5 @@
+import type { LoanInstallment } from '@repo/core';
+import { buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
 import { Avatar, Badge, Button } from '@repo/ui/web';
 import { useClientDetail } from '../hooks/useClientDetail';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
@@ -21,6 +23,24 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
   const latestLoan = data?.loans[0];
   const nextInstallment = latestLoan?.installments.find((i) => i.status === 'pending' || i.status === 'partial');
   const nextRemainingBalance = nextInstallment ? nextInstallment.totalAmount - (nextInstallment.paidAmount ?? 0) : 0;
+
+  function receiptShareLink(installment: LoanInstallment): string | null {
+    if (!client) return null;
+    const paid = installment.paidAmount ?? installment.totalAmount;
+    const totalCuotas = latestLoan?.installmentCount ?? installment.number;
+    const message = buildReceiptMessage({
+      clientName: client.name,
+      installmentNumber: installment.number,
+      installmentCount: totalCuotas,
+      amountReceivedFormatted: formatCurrency(paid).replace('$', ''),
+      isFullyPaid: installment.status === 'paid',
+      remainingBalanceFormatted:
+        installment.status === 'partial'
+          ? formatCurrency(installment.totalAmount - (installment.paidAmount ?? 0)).replace('$', '')
+          : undefined,
+    });
+    return buildWhatsAppShareLink(client.phone, message);
+  }
 
   return (
     <div className="fixed inset-0 z-10 flex justify-end">
@@ -86,6 +106,24 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
                       <span className={installment.status === 'paid' ? 'text-emerald-700' : 'text-neutral-400'}>
                         {installment.status === 'paid' ? 'Pagado' : installment.status === 'partial' ? 'Parcial' : 'Pendiente'}
                       </span>
+                      {(installment.status === 'paid' || installment.status === 'partial') && (
+                        <a
+                          data-testid={`whatsapp-receipt-${installment.number}`}
+                          href={receiptShareLink(installment) ?? undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!receiptShareLink(installment)}
+                          onClick={(e) => {
+                            if (!receiptShareLink(installment)) e.preventDefault();
+                          }}
+                          className={[
+                            'text-[10.5px] font-bold',
+                            receiptShareLink(installment) ? 'text-emerald-700' : 'cursor-not-allowed text-neutral-300',
+                          ].join(' ')}
+                        >
+                          WhatsApp
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>

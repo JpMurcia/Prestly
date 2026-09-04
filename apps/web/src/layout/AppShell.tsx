@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: '/clientes', label: 'Clientes' },
   { to: '/prestamos', label: 'Préstamos activos' },
   { to: '/calculadora', label: 'Calculadora' },
+  { to: '/whatsapp', label: 'WhatsApp' },
 ];
 
 /** Barra lateral fija 232px + contenido — layout compartido por las 4 páginas de Admin Web
