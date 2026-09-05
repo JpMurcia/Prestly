@@ -8,7 +8,8 @@ export interface ChipProps {
   testID?: string;
 }
 
-/** Chip de filtro/parámetro — "Todos · 24", "Cobranza hoy · 5", "$500", "Semanal". */
+/** Chip de filtro/parámetro — "Todos · 24", "Cobranza hoy · 5", "$500", "Semanal". Pastilla
+ * completamente redondeada (mockups: `border-radius:999px`), no una esquina de tarjeta. */
 export function Chip({ label, selected, onPress, className, testID }: ChipProps) {
   return (
     <Pressable
@@ -17,7 +18,7 @@ export function Chip({ label, selected, onPress, className, testID }: ChipProps)
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
       className={[
-        'rounded-lg px-2.5 py-1.5',
+        'rounded-full px-2.5 py-1.5',
         selected ? 'bg-brand-ink' : 'bg-neutral-100',
         className ?? '',
       ].join(' ')}

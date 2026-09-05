@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Pressable, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Client, PortfolioStatus } from '@repo/core';
+import { buildWhatsAppShareLink } from '@repo/core';
 import { Avatar, Badge, Button, Chip, ProgressBar } from '@repo/ui/native';
 
 import { useClientDirectory } from '../hooks/useClientDirectory';
@@ -107,11 +108,19 @@ export function ClientDirectoryScreen() {
   );
 }
 
+function openWhatsApp(link: string | null) {
+  if (!link) return;
+  Linking.openURL(link).catch(() => Alert.alert('No se pudo abrir WhatsApp', 'Verificá que WhatsApp esté instalado.'));
+}
+
 function ClientCard({ client, onPress, onCollect }: { client: Client; onPress: () => void; onCollect: () => void }) {
   const portfolio = client.portfolio;
   const status = portfolio?.status ?? 'sin_prestamo_activo';
   const badge = STATUS_BADGE[status];
   const progress = portfolio && portfolio.installmentsTotal > 0 ? portfolio.installmentsPaid / portfolio.installmentsTotal : 0;
+  // Mensaje vacío — este botón abre la conversación (mockup 2b, ícono junto a la fila de
+  // cliente), no envía un mensaje redactado como el resumen de préstamo o el recibo de pago.
+  const whatsappLink = buildWhatsAppShareLink(client.phone, '');
 
   return (
     <View testID={`directory-client-${client.id}`} className="mb-2 rounded-lg border border-neutral-200 bg-white p-3">
@@ -133,7 +142,17 @@ function ClientCard({ client, onPress, onCollect }: { client: Client; onPress: (
           </Text>
         </View>
       )}
-      <View className="mt-2 flex-row gap-2">
+      <View className="mt-2 flex-row items-center gap-2">
+        <Pressable
+          testID={`directory-whatsapp-${client.id}`}
+          disabled={!whatsappLink}
+          onPress={() => openWhatsApp(whatsappLink)}
+          className={['h-10 items-center justify-center rounded-lg px-3', whatsappLink ? 'bg-[#ECFDF5]' : 'bg-neutral-100'].join(' ')}
+        >
+          <Text className={['text-xs font-bold', whatsappLink ? 'text-brand-emerald' : 'text-neutral-300'].join(' ')}>
+            WhatsApp
+          </Text>
+        </Pressable>
         {(status === 'cobro_hoy' || status === 'mora') && portfolio?.nextInstallmentId && (
           <Button
             testID={`directory-collect-${client.id}`}

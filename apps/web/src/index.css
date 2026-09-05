@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Tailwind v4 no escanea automáticamente node_modules — @repo/ui es un workspace enlazado ahí
+   (ver node_modules/@repo/ui -> packages/ui), así que sin esto cualquier clase usada solo dentro
+   de packages/ui/src (p. ej. `rounded-full` en Chip/Badge) nunca se compila y queda sin efecto
+   en apps/web, aunque sí funcione en apps/mobile (su tailwind.config.js sí declara este content
+   path). Encontrado al verificar visualmente el fix de forma de Chip (specs/005-mockup-consistency-audit/). */
+@source "../../../packages/ui/src";
+
 /* Paleta de spec.md raíz §9 — mismos tokens que apps/mobile/tailwind.config.js theme.colors.brand
    y packages/ui/src/tokens/colors.ts. Tailwind v4 genera bg-brand-emerald/text-brand-ink/etc.
    automáticamente a partir de estas variables --color-*. */

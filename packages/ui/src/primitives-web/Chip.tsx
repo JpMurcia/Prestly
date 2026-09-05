@@ -6,7 +6,8 @@ export interface ChipProps {
   testID?: string;
 }
 
-/** Chip de filtro/parámetro — "Todos · 24", "Cobranza hoy · 5". Versión DOM de ./native. */
+/** Chip de filtro/parámetro — "Todos · 24", "Cobranza hoy · 5". Versión DOM de ./native.
+ * Pastilla completamente redondeada (mockups: `border-radius:999px`), no una esquina de tarjeta. */
 export function Chip({ label, selected, onPress, className, testID }: ChipProps) {
   return (
     <button
@@ -15,7 +16,7 @@ export function Chip({ label, selected, onPress, className, testID }: ChipProps)
       onClick={onPress}
       disabled={!onPress}
       className={[
-        'rounded-lg px-2.5 py-1.5 disabled:cursor-default',
+        'rounded-full px-2.5 py-1.5 disabled:cursor-default',
         selected ? 'bg-brand-ink' : 'bg-neutral-100',
         className ?? '',
       ].join(' ')}

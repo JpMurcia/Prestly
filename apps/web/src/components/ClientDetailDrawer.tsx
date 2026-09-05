@@ -23,6 +23,9 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
   const latestLoan = data?.loans[0];
   const nextInstallment = latestLoan?.installments.find((i) => i.status === 'pending' || i.status === 'partial');
   const nextRemainingBalance = nextInstallment ? nextInstallment.totalAmount - (nextInstallment.paidAmount ?? 0) : 0;
+  // Mensaje vacío — este enlace abre la conversación (mockup 2e, ícono junto a "Registrar
+  // cobro"), no envía un mensaje redactado como el recibo de pago de abajo.
+  const contactWhatsAppLink = client ? buildWhatsAppShareLink(client.phone, '') : null;
 
   function receiptShareLink(installment: LoanInstallment): string | null {
     if (!client) return null;
@@ -81,13 +84,33 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
               />
             </div>
 
-            {nextInstallment && (
-              <Button
-                label={`Registrar cobro ${formatCurrency(nextRemainingBalance)}`}
-                onPress={() => registerPayment.mutate({ installmentId: nextInstallment.id, amount: nextRemainingBalance })}
-                loading={registerPayment.isPending}
-              />
-            )}
+            <div className="flex items-center gap-2">
+              {nextInstallment && (
+                <Button
+                  label={`Registrar cobro ${formatCurrency(nextRemainingBalance)}`}
+                  onPress={() => registerPayment.mutate({ installmentId: nextInstallment.id, amount: nextRemainingBalance })}
+                  loading={registerPayment.isPending}
+                  className="flex-1"
+                />
+              )}
+              <a
+                data-testid="drawer-whatsapp-contact"
+                href={contactWhatsAppLink ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={!contactWhatsAppLink}
+                title={!contactWhatsAppLink ? 'Este cliente no tiene un teléfono utilizable' : undefined}
+                onClick={(e) => {
+                  if (!contactWhatsAppLink) e.preventDefault();
+                }}
+                className={[
+                  'flex h-[42px] w-[42px] flex-none items-center justify-center rounded-lg border border-neutral-200 text-[11px] font-bold',
+                  contactWhatsAppLink ? 'text-emerald-700 hover:bg-emerald-50' : 'cursor-not-allowed text-neutral-300',
+                ].join(' ')}
+              >
+                WA
+              </a>
+            </div>
 
             {latestLoan && (
               <div>
