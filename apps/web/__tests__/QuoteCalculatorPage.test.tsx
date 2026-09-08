@@ -1,9 +1,14 @@
+import { formatMoney } from '@repo/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { QuoteCalculatorPage } from '../src/pages/QuoteCalculatorPage';
+
+// COP es la moneda por defecto (specs/006-rebrand-currency-polish/, US1). El normalizador de
+// @testing-library/dom colapsa el U+00A0 de Intl a un espacio normal antes de comparar.
+const cop = (n: number) => formatMoney(n, 'COP').replace(/\s/g, ' ');
 
 vi.mock('../src/data/repositories', () => ({
   clientRepository: { findByPhone: vi.fn(), create: vi.fn(), findById: vi.fn() },
@@ -28,9 +33,9 @@ describe('QuoteCalculatorPage', () => {
     renderPage();
 
     // valores por defecto del formulario ya son el caso de referencia del spec.md raíz §5.1
-    // ($47.92 aparece en el resumen Y en cada fila de la tabla completa de cuotas)
-    expect(screen.getAllByText('$47.92').length).toBeGreaterThan(0);
-    expect(screen.getByText('$575.00')).toBeInTheDocument();
+    // (la cuota redondeada a COP aparece en el resumen Y en cada fila de la tabla completa)
+    expect(screen.getAllByText(cop(47.92)).length).toBeGreaterThan(0);
+    expect(screen.getByText(cop(575))).toBeInTheDocument();
   });
 
   it('emite el préstamo para un cliente nuevo (spec.md, US4, escenario 2)', async () => {

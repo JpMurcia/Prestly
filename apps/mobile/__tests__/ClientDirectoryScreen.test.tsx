@@ -1,14 +1,19 @@
 import type { Client } from '@repo/core';
 import { fireEvent, renderScreen, screen, waitFor } from '../test-utils';
 import { ClientDirectoryScreen } from '../src/screens/ClientDirectoryScreen';
-import { clientRepository } from '../src/data/repositories';
+import { appSettingsRepository, clientRepository } from '../src/data/repositories';
 
 jest.mock('../src/data/repositories', () => ({
-  clientRepository: { list: jest.fn() },
+  clientRepository: { list: jest.fn(), findByPhone: jest.fn(), create: jest.fn() },
   loanRepository: {},
+  appSettingsRepository: { getSettings: jest.fn() },
 }));
 
 const mockList = clientRepository.list as jest.Mock;
+
+beforeEach(() => {
+  (appSettingsRepository.getSettings as jest.Mock).mockResolvedValue({ currency: 'COP' });
+});
 
 function client(overrides: Partial<Client>): Client {
   return {

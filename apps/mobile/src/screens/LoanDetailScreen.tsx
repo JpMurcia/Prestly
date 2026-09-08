@@ -7,17 +7,18 @@ import { buildLoanShareMessage, buildReceiptMessage, buildWhatsAppShareLink } fr
 import { Badge, Button, Card, ProgressBar } from '@repo/ui/native';
 
 import { useLoan } from '../hooks/useLoan';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { usePayoffLoan } from '../hooks/usePayoffLoan';
 import { clientRepository } from '../data/repositories';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { formatMoney } from '../utils/money';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DetallePrestamo'>;
 
 /** Mockup 1b — detalle del préstamo: cliente, progreso y cronograma completo. */
 export function LoanDetailScreen({ route }: Props) {
   const { loanId } = route.params;
+  const formatMoney = useFormatCurrency();
   const { data: loan, isLoading } = useLoan(loanId);
   const { data: client } = useQuery({
     queryKey: ['loanClient', loan?.clientId],
@@ -47,7 +48,9 @@ export function LoanDetailScreen({ route }: Props) {
           client.phone,
           buildLoanShareMessage({
             clientName: client.name,
-            principalFormatted: formatMoney(loan.principal),
+            // buildLoanShareMessage antepone su propio "$" — se lo quitamos aquí para no
+            // duplicarlo, mismo patrón que apps/web (formatMoney ya incluye el símbolo).
+            principalFormatted: formatMoney(loan.principal).replace('$', ''),
             installmentCount: loan.installments.length,
             firstDueDateFormatted: loan.installments[0].dueDate.toLocaleDateString('es'),
           })
@@ -61,10 +64,12 @@ export function LoanDetailScreen({ route }: Props) {
       clientName: client.name,
       installmentNumber: installment.number,
       installmentCount: loan.installments.length,
-      amountReceivedFormatted: formatMoney(paid),
+      amountReceivedFormatted: formatMoney(paid).replace('$', ''),
       isFullyPaid: installment.status === 'paid',
       remainingBalanceFormatted:
-        installment.status === 'partial' ? formatMoney(installment.totalAmount - (installment.paidAmount ?? 0)) : undefined,
+        installment.status === 'partial'
+          ? formatMoney(installment.totalAmount - (installment.paidAmount ?? 0)).replace('$', '')
+          : undefined,
     });
     return buildWhatsAppShareLink(client.phone, message);
   };
@@ -75,7 +80,7 @@ export function LoanDetailScreen({ route }: Props) {
   }
 
   async function handlePayoff() {
-    Alert.alert('Liquidar anticipadamente', `Se cobrará el saldo restante de $${formatMoney(balance)} y el préstamo quedará liquidado. ¿Confirmar?`, [
+    Alert.alert('Liquidar anticipadamente', `Se cobrará el saldo restante de ${formatMoney(balance)} y el préstamo quedará liquidado. ¿Confirmar?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Confirmar',
@@ -101,11 +106,11 @@ export function LoanDetailScreen({ route }: Props) {
         <ProgressBar value={loan.installments.length > 0 ? paidCount / loan.installments.length : 0} />
         <View className="mt-3 flex-row justify-between">
           <View>
-            <Text className="text-lg font-bold text-brand-ink">${formatMoney(loan.principal)}</Text>
+            <Text className="text-lg font-bold text-brand-ink">{formatMoney(loan.principal)}</Text>
             <Text className="text-xs text-neutral-500">Prestado</Text>
           </View>
           <View>
-            <Text className="text-lg font-bold text-brand-ink">${formatMoney(balance)}</Text>
+            <Text className="text-lg font-bold text-brand-ink">{formatMoney(balance)}</Text>
             <Text className="text-xs text-neutral-500">Saldo</Text>
           </View>
         </View>
@@ -139,8 +144,8 @@ export function LoanDetailScreen({ route }: Props) {
           <View>
             <Text className="font-bold text-brand-ink">Cuota {installment.number}</Text>
             <Text className="text-xs text-neutral-500">
-              ${formatMoney(installment.totalAmount)}
-              {installment.status === 'partial' && ` · faltan $${formatMoney(installment.totalAmount - (installment.paidAmount ?? 0))}`}
+              {formatMoney(installment.totalAmount)}
+              {installment.status === 'partial' && ` · faltan ${formatMoney(installment.totalAmount - (installment.paidAmount ?? 0))}`}
             </Text>
           </View>
           <View className="flex-row items-center gap-2">

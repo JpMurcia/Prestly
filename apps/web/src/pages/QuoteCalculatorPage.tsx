@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { clientRepository } from '../data/repositories';
 import { useClientDirectory } from '../hooks/useClientDirectory';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { useIssueLoan } from '../hooks/useIssueLoan';
-import { formatCurrency } from '../lib/formatCurrency';
 
 const FREQUENCY_LABEL: Record<PaymentFrequency, string> = {
   weekly: 'Semanal',
@@ -17,6 +17,7 @@ const FREQUENCY_LABEL: Record<PaymentFrequency, string> = {
 /** Calculadora de cotización + emisión desde escritorio — misma paridad de resultados que
  * QuoteCalculatorScreen de apps/mobile (spec.md, US4, mockup 1a/2a). */
 export function QuoteCalculatorPage() {
+  const formatCurrency = useFormatCurrency();
   const [principal, setPrincipal] = useState(500);
   const [interestRatePct, setInterestRatePct] = useState(15);
   const [installmentCount, setInstallmentCount] = useState(12);

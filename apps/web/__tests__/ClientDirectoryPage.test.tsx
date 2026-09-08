@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientDirectoryPage } from '../src/pages/ClientDirectoryPage';
 
 vi.mock('../src/data/repositories', () => ({
@@ -10,7 +10,15 @@ vi.mock('../src/data/repositories', () => ({
   loanRepository: { listByClient: vi.fn() },
 }));
 
-import { clientRepository } from '../src/data/repositories';
+import { clientRepository, loanRepository } from '../src/data/repositories';
+
+// KPIs/comportamiento del directorio (specs/006-rebrand-currency-polish/, US5) consultan
+// getScore/listByClient por cliente vía useClientDirectoryExtras — sin un default aquí,
+// React Query se queja de que el queryFn devolvió `undefined`.
+beforeEach(() => {
+  vi.mocked(clientRepository.getScore).mockResolvedValue({ grade: null, installmentsPaidOnTime: 0, installmentsHistorical: 0 });
+  vi.mocked(loanRepository.listByClient).mockResolvedValue([]);
+});
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

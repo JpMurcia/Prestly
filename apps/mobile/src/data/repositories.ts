@@ -1,4 +1,4 @@
-import { createSupabaseClient, SupabaseClientRepository, SupabaseLoanRepository } from '@repo/data-supabase';
+import { createSupabaseClient, SupabaseAppSettingsRepository, SupabaseClientRepository, SupabaseLoanRepository } from '@repo/data-supabase';
 
 /**
  * Único punto de la app que importa @repo/data-supabase directamente (regla DIP de
@@ -14,3 +14,6 @@ const supabase = createSupabaseClient(
 /** Instancias únicas — inyectadas en los use-cases de @repo/core desde los hooks. */
 export const clientRepository = new SupabaseClientRepository(supabase);
 export const loanRepository = new SupabaseLoanRepository(supabase);
+/** Solo lectura desde mobile (specs/006-rebrand-currency-polish/, plan.md) — la moneda se
+ * configura únicamente desde apps/web. */
+export const appSettingsRepository = new SupabaseAppSettingsRepository(supabase);

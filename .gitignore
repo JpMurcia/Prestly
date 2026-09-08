@@ -33,6 +33,9 @@ apps/mobile/web-build/
 # Claude Code (keep shared config tracked, ignore personal/local overrides)
 .claude/settings.local.json
 
+# Local secrets / dev-only notes (never commit real credentials)
+Docs/credenciales_dev.txt
+
 # IDE
 .vscode/*
 !.vscode/extensions.json

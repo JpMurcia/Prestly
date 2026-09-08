@@ -1,9 +1,14 @@
+import { formatMoney } from '@repo/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { LoanAmortizationPage } from '../src/pages/LoanAmortizationPage';
+
+// COP es la moneda por defecto (specs/006-rebrand-currency-polish/, US1). El normalizador de
+// @testing-library/dom colapsa el U+00A0 de Intl a un espacio normal antes de comparar.
+const cop = (n: number) => formatMoney(n, 'COP').replace(/[^\x20-\x7E]/g, String.fromCharCode(32));
 
 vi.mock('../src/data/repositories', () => ({
   loanRepository: { findById: vi.fn(), registerInstallmentPayment: vi.fn(), payoffLoan: vi.fn() },
@@ -71,10 +76,11 @@ describe('LoanAmortizationPage', () => {
 
     renderPage();
 
-    // las 2 cuotas del préstamo de prueba tienen la misma cuota ($47.92)
-    expect(await screen.findAllByText('$47.92')).toHaveLength(2);
+    // las 2 cuotas del préstamo de prueba tienen la misma cuota — aparece en la columna Cuota
+    // de ambas filas y en la de Saldo restante de la fila pendiente (specs/006-rebrand-currency-polish/, US5)
+    expect((await screen.findAllByText(cop(47.92))).length).toBeGreaterThanOrEqual(2);
     // encabezado — capital del préstamo
-    expect(screen.getByText('$500.00', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(cop(500), { exact: false })).toBeInTheDocument();
   });
 
   it('registrar el cobro completo de una cuota pendiente la marca como pagada de inmediato (spec.md US2 esc. 3 de specs/002-admin-web/)', async () => {
@@ -159,10 +165,19 @@ describe('LoanAmortizationPage', () => {
 
     const user = userEvent.setup();
     // El saldo restante del préstamo de prueba es solo el de la cuota 2 (la 1 ya está pagada).
-    const payoffButton = await screen.findByRole('button', { name: /liquidar anticipadamente \(\$47\.92\)/i });
+    // findByRole conserva el espacio exacto que produce Intl en el nombre accesible (a
+    // diferencia de getByText, que sí lo normaliza) — se compara ignorando todo espacio en
+    // vez de intentar reconstruirlo carácter por carácter.
+    const stripSpaces = (s: string) => s.replace(/\s+/g, '');
+    const expectedLabel = stripSpaces(`liquidar anticipadamente (${cop(47.92)})`).toLowerCase();
+    const payoffButton = await screen.findByRole('button', {
+      name: (accessibleName) => stripSpaces(accessibleName).toLowerCase() === expectedLabel,
+    });
     await user.click(payoffButton);
 
-    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('$47.92'));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(cop(47.92).replace(/\s+/g, '\\s+').replace(/[$.]/g, '\\$&')))
+    );
     await waitFor(() => expect(loanRepository.payoffLoan).toHaveBeenCalledWith('p1'));
 
     confirmSpy.mockRestore();

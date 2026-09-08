@@ -14,3 +14,4 @@ export {
   IncompleteWhatsAppCredentialsError,
 } from './SupabaseWhatsAppConfigRepository';
 export { SupabaseWhatsAppNotificationHistoryReader } from './SupabaseWhatsAppNotificationHistoryReader';
+export { SupabaseAppSettingsRepository } from './SupabaseAppSettingsRepository';

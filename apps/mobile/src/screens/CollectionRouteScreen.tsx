@@ -4,12 +4,13 @@ import type { CollectionRouteEntry } from '@repo/core';
 import { Avatar, Badge, Card } from '@repo/ui/native';
 
 import { useCollectionRoute } from '../hooks/useCollectionRoute';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
-import { formatMoney } from '../utils/money';
 
 /** Mockup 2d — ruta de cobranza diaria: vencidas primero, luego las que vencen hoy (US2). */
 export function CollectionRouteScreen() {
   const { data: entries, isLoading } = useCollectionRoute();
+  const formatMoney = useFormatCurrency();
   const [selected, setSelected] = useState<CollectionRouteEntry | null>(null);
 
   // Saldo restante de cada cuota, no su monto original — una cuota `parcial` ya entregó
@@ -26,7 +27,7 @@ export function CollectionRouteScreen() {
       <Card className="mb-3 bg-brand-ink">
         <Text className="text-xs font-bold uppercase text-neutral-400">Cobro esperado hoy</Text>
         <Text testID="route-summary-total" className="text-3xl font-extrabold tabular-nums text-white">
-          ${formatMoney(total)}
+          {formatMoney(total)}
         </Text>
         <Text testID="route-summary-count" className="text-sm text-neutral-400">
           {entries?.length ?? 0} clientes
@@ -64,6 +65,7 @@ export function CollectionRouteScreen() {
 }
 
 function RouteRow({ entry, onPress }: { entry: CollectionRouteEntry; onPress: () => void }) {
+  const formatMoney = useFormatCurrency();
   const isOverdue = entry.overdueDays > 0;
   return (
     <View
@@ -82,12 +84,12 @@ function RouteRow({ entry, onPress }: { entry: CollectionRouteEntry; onPress: ()
         <Badge label={isOverdue ? `Mora ${entry.overdueDays} días` : 'Vence hoy'} tone={isOverdue ? 'mora' : 'cobroHoy'} />
       </View>
       <Text className="font-extrabold tabular-nums text-brand-ink">
-        ${formatMoney(entry.installment.totalAmount - (entry.installment.paidAmount ?? 0))}
+        {formatMoney(entry.installment.totalAmount - (entry.installment.paidAmount ?? 0))}
       </Text>
       <Pressable
         testID={`route-collect-${entry.installment.id}`}
         onPress={onPress}
-        className="h-9 w-9 items-center justify-center rounded-full bg-brand-emerald"
+        className="h-9 w-9 items-center justify-center rounded-[10px] bg-brand-emerald"
       >
         <Text className="text-lg font-bold text-white">+</Text>
       </Pressable>

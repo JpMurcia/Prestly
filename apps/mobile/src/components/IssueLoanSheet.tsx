@@ -4,7 +4,7 @@ import type { Client, InstallmentSchedule, NewClient, PaymentFrequency } from '@
 import { Avatar, Button, Card } from '@repo/ui/native';
 
 import { clientRepository } from '../data/repositories';
-import { formatMoney } from '../utils/money';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 
 type ClientSelection = { existingClientId: string } | { newClient: NewClient };
 
@@ -18,11 +18,16 @@ export interface IssueLoanSheetProps {
   frequency: PaymentFrequency;
   issuing: boolean;
   onConfirm: (client: ClientSelection) => Promise<void>;
+  /** Cliente ya elegido de antemano (specs/006-rebrand-currency-polish/, US4: acción "Nuevo
+   * préstamo" del perfil 360°) — cuando viene provisto, se salta la búsqueda/alta de cliente
+   * por completo, ya que ya se sabe a quién se le está emitiendo. */
+  preselectedClient?: Client;
 }
 
 /** Paso final de US1: buscar un cliente existente o capturar uno nuevo (nombre+teléfono,
- * FR-004) antes de confirmar la emisión. */
-export function IssueLoanSheet({ visible, onClose, schedule, principal, issuing, onConfirm }: IssueLoanSheetProps) {
+ * FR-004) antes de confirmar la emisión — salvo que ya venga un `preselectedClient`. */
+export function IssueLoanSheet({ visible, onClose, schedule, principal, issuing, onConfirm, preselectedClient }: IssueLoanSheetProps) {
+  const formatMoney = useFormatCurrency();
   const [mode, setMode] = useState<'search' | 'new'>('search');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Client[]>([]);
@@ -69,7 +74,14 @@ export function IssueLoanSheet({ visible, onClose, schedule, principal, issuing,
     }
   }
 
-  const canConfirm = (mode === 'search' && selected !== null) || (mode === 'new' && name.trim() !== '' && phone.trim() !== '');
+  const canConfirm = Boolean(preselectedClient) ||
+    (mode === 'search' && selected !== null) ||
+    (mode === 'new' && name.trim() !== '' && phone.trim() !== '');
+
+  async function handleConfirmPreselected() {
+    if (!preselectedClient) return;
+    await onConfirm({ existingClientId: preselectedClient.id });
+  }
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -82,23 +94,33 @@ export function IssueLoanSheet({ visible, onClose, schedule, principal, issuing,
             </Pressable>
           </View>
           <Text className="mb-3 text-sm text-neutral-500">
-            ${formatMoney(principal)} · {installmentCountLabel(schedule)}
+            {formatMoney(principal)} · {installmentCountLabel(schedule)}
           </Text>
 
-          <View className="mb-3 flex-row gap-2">
-            <Pressable testID="issue-sheet-mode-search" onPress={() => setMode('search')} className="flex-1">
-              <Text className={mode === 'search' ? 'text-center font-bold text-brand-navy' : 'text-center text-neutral-400'}>
-                Cliente existente
-              </Text>
-            </Pressable>
-            <Pressable testID="issue-sheet-mode-new" onPress={() => setMode('new')} className="flex-1">
-              <Text className={mode === 'new' ? 'text-center font-bold text-brand-navy' : 'text-center text-neutral-400'}>
-                Cliente nuevo
-              </Text>
-            </Pressable>
-          </View>
+          {preselectedClient ? (
+            <Card testID="issue-sheet-preselected-client" className="mb-3 flex-row items-center gap-2">
+              <Avatar name={preselectedClient.name} size={28} />
+              <View>
+                <Text className="font-semibold text-brand-ink">{preselectedClient.name}</Text>
+                <Text className="text-xs text-neutral-500">{preselectedClient.phone}</Text>
+              </View>
+            </Card>
+          ) : (
+            <View className="mb-3 flex-row gap-2">
+              <Pressable testID="issue-sheet-mode-search" onPress={() => setMode('search')} className="flex-1">
+                <Text className={mode === 'search' ? 'text-center font-bold text-brand-navy' : 'text-center text-neutral-400'}>
+                  Cliente existente
+                </Text>
+              </Pressable>
+              <Pressable testID="issue-sheet-mode-new" onPress={() => setMode('new')} className="flex-1">
+                <Text className={mode === 'new' ? 'text-center font-bold text-brand-navy' : 'text-center text-neutral-400'}>
+                  Cliente nuevo
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
-          {mode === 'search' ? (
+          {preselectedClient ? null : mode === 'search' ? (
             <ScrollView className="max-h-64">
               <TextInput
                 testID="issue-sheet-search-input"
@@ -155,7 +177,7 @@ export function IssueLoanSheet({ visible, onClose, schedule, principal, issuing,
           <Button
             testID="issue-sheet-confirm"
             label={issuing ? 'Emitiendo…' : 'Confirmar emisión'}
-            onPress={handleConfirm}
+            onPress={preselectedClient ? handleConfirmPreselected : handleConfirm}
             disabled={!canConfirm}
             loading={issuing}
             className="mt-4"

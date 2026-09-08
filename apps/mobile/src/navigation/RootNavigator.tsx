@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, type NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
@@ -11,11 +11,13 @@ import { LoanDetailScreen } from '../screens/LoanDetailScreen';
 export type TabParamList = {
   RutaHoy: undefined;
   Directorio: undefined;
-  Calculadora: undefined;
+  /** `prefilledClientId` — acción "Nuevo préstamo" del perfil 360°
+   * (specs/006-rebrand-currency-polish/, US4): abre la calculadora con el cliente ya elegido. */
+  Calculadora: { prefilledClientId?: string } | undefined;
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<TabParamList> | undefined;
   Perfil: { clientId: string };
   DetallePrestamo: { loanId: string };
 };

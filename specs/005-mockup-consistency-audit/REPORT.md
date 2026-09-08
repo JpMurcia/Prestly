@@ -225,6 +225,20 @@ A pedido del usuario se corrigieron 3 de los hallazgos de este reporte:
 
 No se tocó el resto de hallazgos "menores"/"cosméticos" de este reporte — quedan como trabajo de seguimiento futuro si el equipo lo decide.
 
+## Actualización — hallazgos de categoría "botón" cerrados (specs/006-rebrand-currency-polish/)
+
+Se implementaron los siguientes hallazgos de categoría "botón" listados arriba, más el contenido faltante identificado como alcance completo (ver `specs/006-rebrand-currency-polish/spec.md`):
+
+- **`mobile-quote-calculator`**: botón de compartir renombrado a "Compartir tabla por WhatsApp" (se mantuvo el share nativo del SO, no un enlace `wa.me` directo — en este punto del flujo todavía no hay cliente/teléfono seleccionado); alternador "Ver resumen/Ver tabla completa" reemplazado por el nuevo primitivo compartido `SegmentedControl`.
+- **`mobile-client-directory`**: agregado "+ Nuevo" en el header (alta de cliente sin préstamo).
+- **`mobile-client-360-profile`**: "Notas privadas" pasa a solo-lectura con enlace "Editar"; agregada barra de acciones inferior (Llamar/WhatsApp/Nuevo préstamo).
+- **`mobile-collection-route`**: botón de acción de cada fila cambiado de circular a cuadrado redondeado (10px).
+- **`web-dashboard-amortization`**: pestañas de filtro ahora muestran su conteo inline; agregada columna "Saldo restante" a la tabla de amortización.
+- **`web-client-crm-drawer`**: agregado botón "Nuevo cliente"; tabla ampliada de 3 a 7 columnas (préstamos/comportamiento con score y barra/próximo pago/acciones); agregada barra de pie con saldo agregado y score medio; drawer ganó una 3ª tarjeta "Cobrado" + barra de progreso, y un botón "Perfil completo" hacia una página nueva `ClientProfilePage` (sin artboard propio, espejando `mobile-client-360-profile`).
+- **`shared-button`**: sin cambios — seguía sin hallazgos.
+
+**Quedan sin tocar** (ya señalados arriba como cosméticos pospuestos o cambios de producto deliberados, fuera del alcance de specs/006): color por categoría del `Chip` compartido, alto/color del track de `ProgressBar`, el checkbox de WhatsApp dentro del modal de cobro, el tercer chip "Parcial" de método de pago, el botón "Recordar" por cuota, y el avatar de usuario "CM".
+
 ## Validación (`quickstart.md`)
 
 - **SC-001** ✅ — Las 11 filas del catálogo (7 con artboard + 4 sin referencia) tienen veredicto en el resumen ejecutivo.

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExportCsvButton } from '../components/ExportCsvButton';
 import { useActiveLoans } from '../hooks/useActiveLoans';
-import { formatCurrency } from '../lib/formatCurrency';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { deriveLoanStatus, type LoanStatusLabel } from '../lib/loanStatus';
 
 const STATUS_LABEL: Record<LoanStatusLabel, string> = {
@@ -21,6 +21,7 @@ const STATUS_TONE: Record<LoanStatusLabel, 'alDia' | 'cobroHoy' | 'mora'> = {
 /** Préstamos activos — lista buscable + exportable (spec.md, US2, mockup 1c). */
 export function ActiveLoansPage() {
   const { data, isLoading } = useActiveLoans();
+  const formatCurrency = useFormatCurrency();
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {

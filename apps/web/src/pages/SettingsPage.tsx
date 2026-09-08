@@ -1,5 +1,7 @@
+import { SUPPORTED_CURRENCIES, type CurrencyCode } from '@repo/core';
 import { Button, Card } from '@repo/ui/web';
 import { useState } from 'react';
+import { useAppSettings } from '../hooks/useAppSettings';
 import { useClearWhatsAppCredentials, useSaveWhatsAppCredentials, useWhatsAppConfigStatus } from '../hooks/useWhatsAppConfig';
 import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
 
@@ -11,22 +13,53 @@ const NOTIFICATION_RESULT_TONE: Record<string, string> = {
   failed: 'text-red-500',
 };
 
-/** Configuración de la conexión con Twilio (Historia 2) + historial de recordatorios/alertas
- * automáticas (Historia 1) — specs/004-whatsapp-automation/. Una sola pantalla: ambas
- * historias son "todo lo relacionado con WhatsApp" desde la perspectiva del administrador. */
-export function WhatsAppConfigPage() {
+/** Configuración global de la instalación: moneda (specs/006-rebrand-currency-polish/, US1) +
+ * conexión con Twilio e historial de recordatorios/alertas (specs/004-whatsapp-automation/,
+ * Historias 1 y 2) — una sola pantalla de "todo lo que configura el administrador", reemplaza
+ * a la antigua WhatsAppConfigPage (que solo tenía la mitad de este contenido). */
+export function SettingsPage() {
   return (
     <div className="flex flex-col gap-5 p-8">
       <div>
-        <h1 className="font-display text-lg font-bold tracking-tight text-brand-ink">Automatización WhatsApp</h1>
-        <p className="mt-0.5 text-xs font-medium text-neutral-400">
-          Conexión con Twilio y qué se envió automáticamente
-        </p>
+        <h1 className="font-display text-lg font-bold tracking-tight text-brand-ink">Configuración</h1>
+        <p className="mt-0.5 text-xs font-medium text-neutral-400">Moneda, conexión con Twilio y qué se envió automáticamente</p>
       </div>
 
+      <CurrencyPanel />
       <ConnectionPanel />
       <NotificationHistoryPanel />
     </div>
+  );
+}
+
+function CurrencyPanel() {
+  const { currency, isLoading, updateCurrency, isUpdating } = useAppSettings();
+
+  return (
+    <Card>
+      <div className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Moneda</div>
+
+      {isLoading ? (
+        <p className="mt-3 text-sm text-neutral-500">Cargando…</p>
+      ) : (
+        <div className="mt-3 flex items-center gap-3">
+          <select
+            data-testid="currency-select"
+            value={currency}
+            disabled={isUpdating}
+            onChange={(e) => updateCurrency(e.target.value as CurrencyCode)}
+            className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-brand-ink"
+          >
+            {Object.values(SUPPORTED_CURRENCIES).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.displayName} ({c.code})
+              </option>
+            ))}
+          </select>
+          {isUpdating && <span className="text-xs text-neutral-400">Guardando…</span>}
+        </div>
+      )}
+    </Card>
   );
 }
 

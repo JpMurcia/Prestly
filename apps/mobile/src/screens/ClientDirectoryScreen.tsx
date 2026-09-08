@@ -7,9 +7,10 @@ import { buildWhatsAppShareLink } from '@repo/core';
 import { Avatar, Badge, Button, Chip, ProgressBar } from '@repo/ui/native';
 
 import { useClientDirectory } from '../hooks/useClientDirectory';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
+import { NewClientModal } from '../components/NewClientModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { formatMoney } from '../utils/money';
 
 type FilterKey = 'todos' | PortfolioStatus;
 
@@ -33,6 +34,7 @@ export function ClientDirectoryScreen() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('todos');
   const [collecting, setCollecting] = useState<Client | null>(null);
+  const [showNewClient, setShowNewClient] = useState(false);
   const { data: clients, isLoading } = useClientDirectory({ search: search || undefined });
 
   const counts = useMemo(() => {
@@ -52,7 +54,12 @@ export function ClientDirectoryScreen() {
 
   return (
     <View className="flex-1 bg-neutral-50 px-4 pt-4">
-      <Text className="mb-3 text-2xl font-extrabold text-brand-ink">Directorio</Text>
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-2xl font-extrabold text-brand-ink">Directorio</Text>
+        <Pressable testID="directory-new-client" onPress={() => setShowNewClient(true)}>
+          <Text className="font-bold text-brand-navy">+ Nuevo</Text>
+        </Pressable>
+      </View>
 
       <TextInput
         testID="directory-search-input"
@@ -104,6 +111,8 @@ export function ClientDirectoryScreen() {
           subtitle={collecting.name}
         />
       )}
+
+      <NewClientModal visible={showNewClient} onClose={() => setShowNewClient(false)} />
     </View>
   );
 }
@@ -114,6 +123,7 @@ function openWhatsApp(link: string | null) {
 }
 
 function ClientCard({ client, onPress, onCollect }: { client: Client; onPress: () => void; onCollect: () => void }) {
+  const formatMoney = useFormatCurrency();
   const portfolio = client.portfolio;
   const status = portfolio?.status ?? 'sin_prestamo_activo';
   const badge = STATUS_BADGE[status];
@@ -131,7 +141,7 @@ function ClientCard({ client, onPress, onCollect }: { client: Client; onPress: (
           <Badge label={badge.label} tone={badge.tone} />
         </View>
         {portfolio && portfolio.status !== 'sin_prestamo_activo' && (
-          <Text className="font-extrabold tabular-nums text-brand-ink">${formatMoney(portfolio.balance)}</Text>
+          <Text className="font-extrabold tabular-nums text-brand-ink">{formatMoney(portfolio.balance)}</Text>
         )}
       </View>
       {portfolio && portfolio.status !== 'sin_prestamo_activo' && (
@@ -156,7 +166,7 @@ function ClientCard({ client, onPress, onCollect }: { client: Client; onPress: (
         {(status === 'cobro_hoy' || status === 'mora') && portfolio?.nextInstallmentId && (
           <Button
             testID={`directory-collect-${client.id}`}
-            label={`Cobrar $${formatMoney(portfolio.nextInstallmentAmount ?? 0)}`}
+            label={`Cobrar ${formatMoney(portfolio.nextInstallmentAmount ?? 0)}`}
             onPress={onCollect}
             className="flex-1"
           />

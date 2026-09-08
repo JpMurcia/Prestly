@@ -1,9 +1,10 @@
 import type { LoanInstallment } from '@repo/core';
 import { buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
-import { Avatar, Badge, Button } from '@repo/ui/web';
+import { Avatar, Badge, Button, ProgressBar } from '@repo/ui/web';
+import { Link } from 'react-router-dom';
 import { useClientDetail } from '../hooks/useClientDetail';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
-import { formatCurrency } from '../lib/formatCurrency';
 
 const SCORE_TONE = { 'A+': 'scoreAPlus', A: 'scoreA', B: 'scoreB', C: 'scoreC' } as const;
 
@@ -17,12 +18,19 @@ export interface ClientDetailDrawerProps {
 export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProps) {
   const { data, isLoading } = useClientDetail(clientId);
   const registerPayment = useRegisterPayment();
+  const formatCurrency = useFormatCurrency();
 
   const client = data?.client;
   const score = data?.score;
   const latestLoan = data?.loans[0];
   const nextInstallment = latestLoan?.installments.find((i) => i.status === 'pending' || i.status === 'partial');
   const nextRemainingBalance = nextInstallment ? nextInstallment.totalAmount - (nextInstallment.paidAmount ?? 0) : 0;
+  // "Cobrado" = suma de lo ya recibido en el préstamo activo (specs/006-rebrand-currency-polish/,
+  // US5) — incluye pagos parciales, no solo cuotas 'paid' completas.
+  const collected = (latestLoan?.installments ?? []).reduce((acc, i) => acc + (i.paidAmount ?? (i.status === 'paid' ? i.totalAmount : 0)), 0);
+  const paidInstallments = (latestLoan?.installments ?? []).filter((i) => i.status === 'paid').length;
+  const totalInstallments = latestLoan?.installments.length ?? 0;
+  const amortizationProgress = totalInstallments > 0 ? paidInstallments / totalInstallments : 0;
   // Mensaje vacío — este enlace abre la conversación (mockup 2e, ícono junto a "Registrar
   // cobro"), no envía un mensaje redactado como el recibo de pago de abajo.
   const contactWhatsAppLink = client ? buildWhatsAppShareLink(client.phone, '') : null;
@@ -78,11 +86,21 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
 
             <div className="flex gap-2.5">
               <MiniStat label="Prestado" value={formatCurrency(client.portfolio?.principalLent ?? 0)} />
+              <MiniStat label="Cobrado" value={formatCurrency(collected)} />
               <MiniStat
                 label="Saldo"
                 value={formatCurrency(client.portfolio?.balance ?? 0)}
               />
             </div>
+
+            {latestLoan && (
+              <div>
+                <ProgressBar value={amortizationProgress} />
+                <div className="mt-1 text-[11px] font-semibold text-neutral-500">
+                  {paidInstallments} de {totalInstallments} · {Math.round(amortizationProgress * 100)}%
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               {nextInstallment && (
@@ -93,6 +111,13 @@ export function ClientDetailDrawer({ clientId, onClose }: ClientDetailDrawerProp
                   className="flex-1"
                 />
               )}
+              <Link
+                data-testid="drawer-full-profile"
+                to={`/clientes/${clientId}`}
+                className="flex h-[42px] items-center justify-center rounded-lg border border-neutral-200 px-3 text-[11px] font-bold text-brand-navy hover:bg-neutral-50"
+              >
+                Perfil completo
+              </Link>
               <a
                 data-testid="drawer-whatsapp-contact"
                 href={contactWhatsAppLink ?? undefined}

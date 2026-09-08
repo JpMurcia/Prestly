@@ -1,12 +1,17 @@
 import type { Client, ClientScore, Loan } from '@repo/core';
 import { fireEvent, renderScreen, screen, waitFor } from '../test-utils';
 import { ClientProfileScreen } from '../src/screens/ClientProfileScreen';
-import { clientRepository, loanRepository } from '../src/data/repositories';
+import { appSettingsRepository, clientRepository, loanRepository } from '../src/data/repositories';
 
 jest.mock('../src/data/repositories', () => ({
   clientRepository: { findById: jest.fn(), getScore: jest.fn(), update: jest.fn() },
   loanRepository: { listByClient: jest.fn() },
+  appSettingsRepository: { getSettings: jest.fn() },
 }));
+
+beforeEach(() => {
+  (appSettingsRepository.getSettings as jest.Mock).mockResolvedValue({ currency: 'COP' });
+});
 
 const mockFindById = clientRepository.findById as jest.Mock;
 const mockGetScore = clientRepository.getScore as jest.Mock;
@@ -85,6 +90,10 @@ describe('ClientProfileScreen', () => {
     mockUpdate.mockResolvedValue({ ...CLIENT, privateNotes: 'Promete pagar el viernes', notesUpdatedAt: new Date() });
 
     await renderScreen(<ClientProfileScreen route={route() as never} navigation={{} as never} />);
+    // Solo-lectura por defecto (specs/006-rebrand-currency-polish/, US4) — hay que entrar en
+    // modo edición explícitamente antes de que exista el campo de texto.
+    await waitFor(() => expect(screen.getByTestId('profile-notes-edit')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('profile-notes-edit'));
     await waitFor(() => expect(screen.getByTestId('profile-notes-input')).toBeTruthy());
 
     await fireEvent.changeText(screen.getByTestId('profile-notes-input'), 'Promete pagar el viernes');

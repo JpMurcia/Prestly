@@ -5,20 +5,22 @@ const NAV_ITEMS = [
   { to: '/clientes', label: 'Clientes' },
   { to: '/prestamos', label: 'Préstamos activos' },
   { to: '/calculadora', label: 'Calculadora' },
-  { to: '/whatsapp', label: 'WhatsApp' },
+  { to: '/configuracion', label: 'Configuración' },
 ];
 
-/** Barra lateral fija 232px + contenido — layout compartido por las 4 páginas de Admin Web
- * (mockups 1c/2e, spec.md raíz §9: fondo navy #0F172A, acento verde #10B981 en el ítem activo). */
+/** Barra lateral fija 232px + contenido — layout compartido por las páginas de Admin Web
+ * (mockups 1c/2e, spec.md raíz §9: fondo navy #0F172A, acento verde #10B981 en el ítem activo).
+ * Marca "Prestly" (specs/006-rebrand-currency-polish/, US2) — antes decía "Microcréditos",
+ * inconsistente con el `<title>` de `index.html`, que ya decía "Prestly". */
 export function AppShell() {
   return (
     <div className="flex h-screen bg-neutral-50 font-body">
       <aside className="flex w-[232px] flex-none flex-col gap-6 bg-brand-ink p-3.5">
         <div className="flex items-center gap-2.5 px-2">
           <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-brand-emerald font-display text-sm font-extrabold text-brand-ink">
-            m
+            P
           </span>
-          <span className="font-display text-[15px] font-extrabold tracking-tight text-white">Microcréditos</span>
+          <span className="font-display text-[15px] font-extrabold tracking-tight text-white">Prestly</span>
         </div>
 
         <nav className="flex flex-col gap-1">

@@ -2,10 +2,11 @@ import { createBrowserRouter } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { ActiveLoansPage } from './pages/ActiveLoansPage';
 import { ClientDirectoryPage } from './pages/ClientDirectoryPage';
+import { ClientProfilePage } from './pages/ClientProfilePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoanAmortizationPage } from './pages/LoanAmortizationPage';
 import { QuoteCalculatorPage } from './pages/QuoteCalculatorPage';
-import { WhatsAppConfigPage } from './pages/WhatsAppConfigPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 /**
  * Rutas de nivel superior (spec.md, mockups 1c/2e: la barra de direcciones asume URLs
@@ -21,8 +22,9 @@ export const router = createBrowserRouter([
       { path: '/prestamos', element: <ActiveLoansPage /> },
       { path: '/prestamos/:id', element: <LoanAmortizationPage /> },
       { path: '/clientes', element: <ClientDirectoryPage /> },
+      { path: '/clientes/:id', element: <ClientProfilePage /> },
       { path: '/calculadora', element: <QuoteCalculatorPage /> },
-      { path: '/whatsapp', element: <WhatsAppConfigPage /> },
+      { path: '/configuracion', element: <SettingsPage /> },
     ],
   },
 ]);

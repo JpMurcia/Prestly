@@ -13,3 +13,5 @@ export { Chip } from './primitives/Chip';
 export type { ChipProps } from './primitives/Chip';
 export { Avatar } from './primitives/Avatar';
 export type { AvatarProps } from './primitives/Avatar';
+export { SegmentedControl } from './primitives/SegmentedControl';
+export type { SegmentedControlProps, SegmentedControlOption } from './primitives/SegmentedControl';

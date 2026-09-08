@@ -4,6 +4,8 @@
  * responsable de traducir hacia/desde las columnas en español de spec.md raíz §4.
  */
 
+import type { CurrencyCode } from '../domain/currency';
+
 // ── Cálculo (sin red, sin persistencia) — spec.md raíz §6 ──────────────────
 
 export type PaymentFrequency = 'weekly' | 'biweekly' | 'monthly';
@@ -266,4 +268,21 @@ export interface IWhatsAppConfigRepository {
 // consumidor distinto de la pantalla de configuración (Historia 2), a diferencia de esta.
 export interface IWhatsAppNotificationHistoryReader {
   list(): Promise<WhatsAppNotification[]>;
+}
+
+// ── Configuración global de la instalación (specs/006-rebrand-currency-polish/) ────────────
+
+export interface AppSettings {
+  currency: CurrencyCode;
+}
+
+/**
+ * Ajustes globales de la instalación (hoy solo moneda). Una sola interfaz de lectura/escritura,
+ * no separada ISP-style — igual criterio que IWhatsAppConfigRepository: un único consumidor real
+ * (la pantalla de Configuración en apps/web) que siempre necesita ambas mitades juntas.
+ * apps/mobile solo invoca getSettings() (plan.md, Structure Decision).
+ */
+export interface IAppSettingsRepository {
+  getSettings(): Promise<AppSettings>;
+  updateCurrency(currency: CurrencyCode): Promise<AppSettings>;
 }

@@ -1,13 +1,14 @@
 import { Card } from '@repo/ui/web';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useDashboardSummary } from '../hooks/useDashboardSummary';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { usePortfolioTrend } from '../hooks/usePortfolioTrend';
-import { formatCurrency } from '../lib/formatCurrency';
 
 /** Dashboard administrativo — 4 métricas de cartera (spec.md, US1, mockup 1c) + tendencia
  * mensual (specs/003-operational-management/, US3). */
 export function DashboardPage() {
   const { data, isLoading } = useDashboardSummary();
+  const formatCurrency = useFormatCurrency();
 
   return (
     <div className="flex flex-col gap-5 p-8">
@@ -45,6 +46,7 @@ export function DashboardPage() {
  * del tiempo (specs/003-operational-management/, US3, FR-008). */
 function PortfolioTrendPanel() {
   const { data: trend, isLoading } = usePortfolioTrend();
+  const formatCurrency = useFormatCurrency();
 
   return (
     <Card>

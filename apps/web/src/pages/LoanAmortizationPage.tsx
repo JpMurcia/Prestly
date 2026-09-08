@@ -5,10 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { clientRepository } from '../data/repositories';
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { useLoanAmortization } from '../hooks/useLoanAmortization';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
 import { usePayoffLoan } from '../hooks/usePayoffLoan';
-import { formatCurrency } from '../lib/formatCurrency';
 
 type FilterKey = 'todas' | 'pagadas' | 'pendientes' | 'vence_hoy';
 
@@ -32,6 +32,7 @@ function remainingBalance(installment: LoanInstallment): number {
  * parcial) y liquidación anticipada (spec.md, US2 de specs/002-admin-web/, mockup 1c;
  * specs/003-operational-management/, US1/US2). */
 export function LoanAmortizationPage() {
+  const formatCurrency = useFormatCurrency();
   const { id } = useParams<{ id: string }>();
   const { data: loan, isLoading } = useLoanAmortization(id);
   const { data: client } = useQuery({
@@ -51,6 +52,18 @@ export function LoanAmortizationPage() {
     if (filter === 'vence_hoy') return installments.filter(isDueToday);
     return installments.filter((i) => i.status !== 'paid' && !isDueToday(i));
   }, [loan, filter]);
+
+  // Conteo por filtro (specs/006-rebrand-currency-polish/, US5; REPORT.md hallazgo
+  // "boton"/cosmético) — mismo criterio que los Chip de filtro de ClientDirectoryPage.
+  const filterCounts = useMemo(() => {
+    const installments = loan?.installments ?? [];
+    return {
+      todas: installments.length,
+      pagadas: installments.filter((i) => i.status === 'paid').length,
+      vence_hoy: installments.filter(isDueToday).length,
+      pendientes: installments.filter((i) => i.status !== 'paid' && !isDueToday(i)).length,
+    };
+  }, [loan]);
 
   if (isLoading || !loan) {
     return <p className="p-8 text-sm text-neutral-500">Cargando…</p>;
@@ -141,10 +154,14 @@ export function LoanAmortizationPage() {
       </div>
 
       <div className="flex gap-1 rounded-[9px] bg-neutral-100 p-1 self-start">
-        <FilterTab label="Todas" active={filter === 'todas'} onClick={() => setFilter('todas')} />
-        <FilterTab label="Pagadas" active={filter === 'pagadas'} onClick={() => setFilter('pagadas')} />
-        <FilterTab label="Pendientes" active={filter === 'pendientes'} onClick={() => setFilter('pendientes')} />
-        <FilterTab label="Vence hoy" active={filter === 'vence_hoy'} onClick={() => setFilter('vence_hoy')} />
+        <FilterTab label={`Todas · ${filterCounts.todas}`} active={filter === 'todas'} onClick={() => setFilter('todas')} />
+        <FilterTab label={`Pagadas · ${filterCounts.pagadas}`} active={filter === 'pagadas'} onClick={() => setFilter('pagadas')} />
+        <FilterTab
+          label={`Pendientes · ${filterCounts.pendientes}`}
+          active={filter === 'pendientes'}
+          onClick={() => setFilter('pendientes')}
+        />
+        <FilterTab label={`Vence hoy · ${filterCounts.vence_hoy}`} active={filter === 'vence_hoy'} onClick={() => setFilter('vence_hoy')} />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
@@ -156,6 +173,7 @@ export function LoanAmortizationPage() {
               <th className="px-5 text-right">Capital</th>
               <th className="px-5 text-right">Interés</th>
               <th className="px-5 text-right">Cuota</th>
+              <th className="px-5 text-right">Saldo restante</th>
               <th className="px-5 text-center">Estado</th>
               <th className="px-5 text-right">Acciones</th>
             </tr>
@@ -174,6 +192,9 @@ export function LoanAmortizationPage() {
                       faltan {formatCurrency(remainingBalance(installment))}
                     </div>
                   )}
+                </td>
+                <td className="px-5 text-right tabular-nums text-neutral-500">
+                  {formatCurrency(installment.status === 'paid' ? 0 : remainingBalance(installment))}
                 </td>
                 <td className="px-5 text-center">
                   {installment.status === 'paid' ? (
@@ -241,6 +262,7 @@ export function LoanAmortizationPage() {
               <td className="px-5 text-right tabular-nums">{formatCurrency(totals.principal)}</td>
               <td className="px-5 text-right tabular-nums">{formatCurrency(totals.interest)}</td>
               <td className="px-5 text-right tabular-nums">{formatCurrency(totals.total)}</td>
+              <td className="px-5 text-right tabular-nums">{formatCurrency(loanBalance)}</td>
               <td colSpan={2} />
             </tr>
           </tfoot>

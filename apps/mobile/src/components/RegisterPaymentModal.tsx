@@ -3,9 +3,9 @@ import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { registerPayment } from '@repo/core';
 import { Button, Chip } from '@repo/ui/native';
 
+import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
 import { useNetworkStatus } from '../offline/useNetworkStatus';
-import { formatMoney } from '../utils/money';
 
 export interface RegisterPaymentModalProps {
   visible: boolean;
@@ -26,6 +26,7 @@ type PaymentMethod = 'cash' | 'transfer';
 export function RegisterPaymentModal({ visible, onClose, installmentId, remainingBalance, subtitle }: RegisterPaymentModalProps) {
   const { isConnected } = useNetworkStatus();
   const registerPaymentMutation = useRegisterPayment();
+  const formatMoney = useFormatCurrency();
   // Redondeado defensivamente aquí también — protege contra un futuro llamador que olvide
   // redondear su propia resta en punto flotante (encontrado en verificación manual).
   const roundedRemainingBalance = Math.round((remainingBalance + Number.EPSILON) * 100) / 100;
@@ -74,7 +75,7 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, remainin
             <View className="flex-1">
               <Text className="mb-1 text-xs font-bold uppercase text-neutral-400">Saldo restante</Text>
               <Text testID="payment-modal-due" className="rounded-lg border border-neutral-200 px-3 py-2 text-base text-neutral-500">
-                ${formatMoney(roundedRemainingBalance)}
+                {formatMoney(roundedRemainingBalance)}
               </Text>
             </View>
             <View className="flex-1">
@@ -91,13 +92,13 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, remainin
 
           {changeDue > 0 && (
             <View testID="payment-modal-change" className="mb-3 rounded-lg bg-[#ECFDF5] p-3">
-              <Text className="text-sm font-bold text-[#047857]">Cambio a entregar: ${formatMoney(changeDue)}</Text>
+              <Text className="text-sm font-bold text-[#047857]">Cambio a entregar: {formatMoney(changeDue)}</Text>
             </View>
           )}
           {isPartial && (
             <View testID="payment-modal-partial-warning" className="mb-3 rounded-lg bg-[#F1F5F9] p-3">
               <Text className="text-sm text-[#475569]">
-                Se registrará como pago parcial — quedarán ${formatMoney(roundedRemainingBalance - amountApplied)} pendientes de esta cuota.
+                Se registrará como pago parcial — quedarán {formatMoney(roundedRemainingBalance - amountApplied)} pendientes de esta cuota.
               </Text>
             </View>
           )}

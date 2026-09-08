@@ -1,15 +1,23 @@
 import type { CollectionRouteEntry } from '@repo/core';
 import { fireEvent, renderScreen, screen, waitFor } from '../test-utils';
+
+// Intl usa U+00A0 (espacio de no separacion) entre el simbolo y la cifra en es-CO.
+const NBSP = ' ';
 import { CollectionRouteScreen } from '../src/screens/CollectionRouteScreen';
-import { loanRepository } from '../src/data/repositories';
+import { appSettingsRepository, loanRepository } from '../src/data/repositories';
 
 jest.mock('../src/data/repositories', () => ({
   loanRepository: { listCollectionRoute: jest.fn(), registerInstallmentPayment: jest.fn() },
   clientRepository: {},
+  appSettingsRepository: { getSettings: jest.fn() },
 }));
 
 const mockListCollectionRoute = loanRepository.listCollectionRoute as jest.Mock;
 const mockRegisterInstallmentPayment = loanRepository.registerInstallmentPayment as jest.Mock;
+
+beforeEach(() => {
+  (appSettingsRepository.getSettings as jest.Mock).mockResolvedValue({ currency: 'COP' });
+});
 
 function makeEntry(overrides: Partial<CollectionRouteEntry>): CollectionRouteEntry {
   return {
@@ -53,7 +61,7 @@ describe('CollectionRouteScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Cliente Vencido')).toBeTruthy());
     expect(screen.getByText('Cliente Hoy')).toBeTruthy();
-    expect(screen.getByTestId('route-summary-total')).toHaveTextContent('$95.84'); // 2 × $47.92
+    expect(screen.getByTestId('route-summary-total')).toHaveTextContent(`$${NBSP}96`); // 2 × $47.92, redondeado a COP
     expect(screen.getByTestId('route-summary-count')).toHaveTextContent('2 clientes');
   });
 
@@ -76,11 +84,11 @@ describe('CollectionRouteScreen', () => {
 
     await renderScreen(<CollectionRouteScreen />);
 
-    // Saldo restante ($27.92), no el monto original de la cuota ($47.92).
-    await waitFor(() => expect(screen.getByTestId('route-summary-total')).toHaveTextContent('$27.92'));
+    // Saldo restante (~$28 en COP), no el monto original de la cuota (~$48).
+    await waitFor(() => expect(screen.getByTestId('route-summary-total')).toHaveTextContent(`$${NBSP}28`));
 
     await fireEvent.press(screen.getByTestId('route-collect-installment-1'));
-    await waitFor(() => expect(screen.getByTestId('payment-modal-due')).toHaveTextContent('$27.92'));
+    await waitFor(() => expect(screen.getByTestId('payment-modal-due')).toHaveTextContent(`$${NBSP}28`));
 
     // Un pago parcial de $10 sobre el saldo restante de $27.92 debe registrarse tal cual,
     // no rechazarse (a diferencia de FR-014 de specs/001-mobile-field-app/).
