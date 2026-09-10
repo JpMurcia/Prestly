@@ -286,3 +286,46 @@ export interface IAppSettingsRepository {
   getSettings(): Promise<AppSettings>;
   updateCurrency(currency: CurrencyCode): Promise<AppSettings>;
 }
+
+// ── Autenticación del administrador (specs/007-admin-authentication/) ──────────────────────
+
+export interface AuthSession {
+  userId: string;
+  email: string;
+}
+
+/**
+ * Lanzado por IAuthRepository.signInWithPassword cuando el email o la contraseña son
+ * incorrectos — nunca distingue cuál de los dos, para no revelar si el usuario existe
+ * (spec FR-007). Cualquier otro error (red, timeout) se deja propagar tal cual, para que la UI
+ * lo distinga de este (spec FR-008). Vive en @repo/core (no en packages/data-supabase, a
+ * diferencia de IncompleteWhatsAppCredentialsError) porque las apps sí necesitan distinguirlo
+ * con `instanceof` en la UI (LoginPage/LoginScreen) — mismo motivo por el que DuplicatePhoneError
+ * vive en @repo/core y no junto a SupabaseClientRepository: apps/web solo puede importar
+ * @repo/data-supabase directamente desde data/repositories.ts (regla DIP), así que un error que
+ * la UI necesita reconocer por tipo tiene que ser parte del contrato público en @repo/core.
+ */
+export class InvalidCredentialsError extends Error {
+  constructor() {
+    super('Usuario o contraseña incorrectos.');
+    this.name = 'InvalidCredentialsError';
+  }
+}
+
+/**
+ * Puente hacia la sesión de Supabase Auth. Una sola interfaz de lectura/escritura, no
+ * separada ISP-style — igual criterio que IAppSettingsRepository/IWhatsAppConfigRepository:
+ * un único consumidor real (AuthProvider, uno por app) que siempre necesita todo el contrato
+ * junto. Existe una sola cuenta (spec.md raíz §1) — ningún método acepta ni expone un
+ * identificador de "otro" usuario. InvalidCredentialsError vive junto a la implementación
+ * en packages/data-supabase (mismo criterio que IncompleteWhatsAppCredentialsError), no aquí.
+ */
+export interface IAuthRepository {
+  /** Sesión actual, si ya se resolvió una al reabrir la app. `null` si no hay sesión activa. */
+  getSession(): Promise<AuthSession | null>;
+  /** Se suscribe a cambios de sesión (login, logout, refresh de token). Devuelve una función
+   * para cancelar la suscripción — se llama al desmontar AuthProvider. */
+  onSessionChange(callback: (session: AuthSession | null) => void): () => void;
+  signInWithPassword(email: string, password: string): Promise<AuthSession>;
+  signOut(): Promise<void>;
+}

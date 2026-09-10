@@ -1,12 +1,15 @@
 import { NavigationContainer, type NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { ActivityIndicator, View } from 'react-native';
 
 import { CollectionRouteScreen } from '../screens/CollectionRouteScreen';
 import { ClientDirectoryScreen } from '../screens/ClientDirectoryScreen';
 import { QuoteCalculatorScreen } from '../screens/QuoteCalculatorScreen';
 import { ClientProfileScreen } from '../screens/ClientProfileScreen';
 import { LoanDetailScreen } from '../screens/LoanDetailScreen';
+import { LoginScreen } from '../screens/LoginScreen';
+import { useAuth } from '../auth/useAuth';
 
 export type TabParamList = {
   RutaHoy: undefined;
@@ -38,18 +41,35 @@ function Tabs() {
 }
 
 /** Pantallas de detalle apiladas sobre los tabs (Perfil 360°, Detalle de préstamo). */
-export function RootNavigator() {
+function AuthenticatedStack() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Tabs" component={Tabs} />
-        <Stack.Screen name="Perfil" component={ClientProfileScreen} options={{ headerShown: true, title: 'Perfil' }} />
-        <Stack.Screen
-          name="DetallePrestamo"
-          component={LoanDetailScreen}
-          options={{ headerShown: true, title: 'Préstamo' }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs" component={Tabs} />
+      <Stack.Screen name="Perfil" component={ClientProfileScreen} options={{ headerShown: true, title: 'Perfil' }} />
+      <Stack.Screen
+        name="DetallePrestamo"
+        component={LoanDetailScreen}
+        options={{ headerShown: true, title: 'Préstamo' }}
+      />
+    </Stack.Navigator>
   );
+}
+
+/**
+ * Monta LoginScreen o el árbol autenticado según haya sesión (specs/007-admin-authentication/,
+ * US2) — sin guarda por pantalla individual, mismo criterio que RequireAuth en apps/web
+ * (research.md §8): un solo punto de verdad, no se puede rodear navegando directo a una pantalla.
+ */
+export function RootNavigator() {
+  const { session, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-neutral-50">
+        <ActivityIndicator color="#10B981" />
+      </View>
+    );
+  }
+
+  return <NavigationContainer>{session ? <AuthenticatedStack /> : <LoginScreen />}</NavigationContainer>;
 }

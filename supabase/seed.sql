@@ -65,6 +65,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ── 0. Cuenta administradora de desarrollo (specs/007-admin-authentication/) ───────────────
+-- Nunca corre en producción — seed.sql no se aplica ahí (research.md §7). Password solo para
+-- desarrollo local, documentada también en quickstart.md.
+-- confirmation_token/recovery_token/email_change_token_new/email_change no tienen default en
+-- este esquema de GoTrue (quedan NULL si se omiten) — su driver Go no tolera NULL ahí ("Scan
+-- error ... converting NULL to string is unsupported"), a diferencia de phone_change_token/
+-- reauthentication_token/etc., que sí traen default ''. Se fuerzan a '' explícitamente.
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data, is_sso_user, is_anonymous,
+  confirmation_token, recovery_token, email_change_token_new, email_change
+) VALUES (
+  '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
+  'admin@prestly.local', crypt('Prestly-Dev-007!', gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}', '{}', false, false,
+  '', '', '', ''
+);
+
+INSERT INTO auth.identities (
+  id, provider_id, user_id, identity_data, provider, created_at, updated_at, last_sign_in_at
+)
+SELECT
+  gen_random_uuid(), id::text, id,
+  jsonb_build_object('sub', id::text, 'email', email), 'email', now(), now(), now()
+FROM auth.users WHERE email = 'admin@prestly.local';
+
 -- ── 1. Camila Restrepo — al día (semanal) ───────────────────────────────────
 -- Cuota 1 (vencida hace 3 días) ya pagada; la próxima cuota vence en el futuro.
 DO $$

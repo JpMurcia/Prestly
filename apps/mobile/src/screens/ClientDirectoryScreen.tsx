@@ -6,6 +6,7 @@ import type { Client, PortfolioStatus } from '@repo/core';
 import { buildWhatsAppShareLink } from '@repo/core';
 import { Avatar, Badge, Button, Chip, ProgressBar } from '@repo/ui/native';
 
+import { useAuth } from '../auth/useAuth';
 import { useClientDirectory } from '../hooks/useClientDirectory';
 import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
@@ -31,6 +32,7 @@ const STATUS_BADGE: Record<PortfolioStatus, { label: string; tone: 'alDia' | 'co
 /** Mockup 2b — directorio y cartera de clientes (US3). */
 export function ClientDirectoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { signOut } = useAuth();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('todos');
   const [collecting, setCollecting] = useState<Client | null>(null);
@@ -56,9 +58,16 @@ export function ClientDirectoryScreen() {
     <View className="flex-1 bg-neutral-50 px-4 pt-4">
       <View className="mb-3 flex-row items-center justify-between">
         <Text className="text-2xl font-extrabold text-brand-ink">Directorio</Text>
-        <Pressable testID="directory-new-client" onPress={() => setShowNewClient(true)}>
-          <Text className="font-bold text-brand-navy">+ Nuevo</Text>
-        </Pressable>
+        <View className="flex-row items-center gap-4">
+          <Pressable testID="directory-new-client" onPress={() => setShowNewClient(true)}>
+            <Text className="font-bold text-brand-navy">+ Nuevo</Text>
+          </Pressable>
+          {/* specs/007-admin-authentication/, US4 — única superficie de cierre de sesión en
+              mobile (no hay pantalla de ajustes propia, a diferencia de SettingsPage en web). */}
+          <Pressable testID="sign-out" onPress={() => signOut()}>
+            <Text className="font-bold text-neutral-400">Salir</Text>
+          </Pressable>
+        </View>
       </View>
 
       <TextInput

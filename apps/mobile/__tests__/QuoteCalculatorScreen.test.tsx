@@ -6,6 +6,11 @@ jest.mock('../src/data/repositories', () => ({
   clientRepository: { findById: jest.fn(), list: jest.fn(), findByPhone: jest.fn(), create: jest.fn() },
   loanRepository: { save: jest.fn() },
   appSettingsRepository: { getSettings: jest.fn() },
+  authRepository: {
+    getSession: jest.fn().mockResolvedValue({ userId: 'u1', email: 'admin@prestly.local' }),
+    onSessionChange: jest.fn().mockReturnValue(() => {}),
+    signOut: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 beforeEach(() => {

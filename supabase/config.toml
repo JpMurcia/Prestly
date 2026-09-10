@@ -166,9 +166,10 @@ max_indexes = 5
 # [storage.vector.buckets.documents-openai]
 
 [auth]
-# Sin uso: 0 referencias a `.auth.*` en todo el repo. La app corre siempre como rol `anon`;
-# los RPC son SECURITY DEFINER con GRANT a anon/authenticated, nunca se valida un usuario real.
-enabled = false
+# Activado (specs/007-admin-authentication/): apps/web y apps/mobile ahora exigen una sesión
+# real de Supabase Auth — ver supabase/migrations/0007_auth_rls.sql para las policies que
+# dependen de este servicio estando arriba.
+enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
 site_url = "http://127.0.0.1:3000"
@@ -188,7 +189,11 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Desactivado a propósito (specs/007-admin-authentication/, FR-006): sin esto, cualquiera
+# podría autorregistrarse contra el endpoint público de Auth y obtener una sesión
+# `authenticated` válida, que pasaría las RLS policies igual que la cuenta real — la única
+# cuenta administradora se aprovisiona fuera de este flujo (research.md §7).
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts

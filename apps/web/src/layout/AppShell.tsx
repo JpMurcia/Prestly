@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../auth/useAuth';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -13,6 +14,8 @@ const NAV_ITEMS = [
  * Marca "Prestly" (specs/006-rebrand-currency-polish/, US2) — antes decía "Microcréditos",
  * inconsistente con el `<title>` de `index.html`, que ya decía "Prestly". */
 export function AppShell() {
+  const { signOut } = useAuth();
+
   return (
     <div className="flex h-screen bg-neutral-50 font-body">
       <aside className="flex w-[232px] flex-none flex-col gap-6 bg-brand-ink p-3.5">
@@ -40,6 +43,17 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+
+        {/* specs/007-admin-authentication/, US4 — cierra sesión y limpia la caché de React
+            Query (FR-005); mt-auto la fija al pie sin importar cuántos ítems tenga el nav. */}
+        <button
+          type="button"
+          data-testid="sign-out"
+          onClick={() => signOut()}
+          className="mt-auto rounded-[9px] px-3 py-2.5 text-left text-[13px] font-semibold text-neutral-400 hover:bg-white/5"
+        >
+          Cerrar sesión
+        </button>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">

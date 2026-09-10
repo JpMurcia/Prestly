@@ -6,6 +6,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import { ActivityIndicator, View } from 'react-native';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { AuthProvider } from './src/auth/AuthProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,8 +35,10 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RootNavigator />
-      <StatusBar style="auto" />
+      <AuthProvider>
+        <RootNavigator />
+        <StatusBar style="auto" />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

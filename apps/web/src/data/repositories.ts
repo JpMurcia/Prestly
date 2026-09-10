@@ -1,6 +1,7 @@
 import {
   createSupabaseClient,
   SupabaseAppSettingsRepository,
+  SupabaseAuthRepository,
   SupabaseClientRepository,
   SupabaseLoanRepository,
   SupabasePortfolioReader,
@@ -26,3 +27,4 @@ export const portfolioReader = new SupabasePortfolioReader(supabase);
 export const whatsAppConfigRepository = new SupabaseWhatsAppConfigRepository(supabase);
 export const whatsAppNotificationHistoryReader = new SupabaseWhatsAppNotificationHistoryReader(supabase);
 export const appSettingsRepository = new SupabaseAppSettingsRepository(supabase);
+export const authRepository = new SupabaseAuthRepository(supabase);

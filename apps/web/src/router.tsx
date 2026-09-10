@@ -1,10 +1,12 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { RequireAuth } from './auth/RequireAuth';
 import { AppShell } from './layout/AppShell';
 import { ActiveLoansPage } from './pages/ActiveLoansPage';
 import { ClientDirectoryPage } from './pages/ClientDirectoryPage';
 import { ClientProfilePage } from './pages/ClientProfilePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoanAmortizationPage } from './pages/LoanAmortizationPage';
+import { LoginPage } from './pages/LoginPage';
 import { QuoteCalculatorPage } from './pages/QuoteCalculatorPage';
 import { SettingsPage } from './pages/SettingsPage';
 
@@ -15,16 +17,22 @@ import { SettingsPage } from './pages/SettingsPage';
  * T047); hasta entonces el elemento es `null` (placeholder de Foundational).
  */
 export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
   {
-    element: <AppShell />,
+    element: <RequireAuth />,
     children: [
-      { path: '/', element: <DashboardPage /> },
-      { path: '/prestamos', element: <ActiveLoansPage /> },
-      { path: '/prestamos/:id', element: <LoanAmortizationPage /> },
-      { path: '/clientes', element: <ClientDirectoryPage /> },
-      { path: '/clientes/:id', element: <ClientProfilePage /> },
-      { path: '/calculadora', element: <QuoteCalculatorPage /> },
-      { path: '/configuracion', element: <SettingsPage /> },
+      {
+        element: <AppShell />,
+        children: [
+          { path: '/', element: <DashboardPage /> },
+          { path: '/prestamos', element: <ActiveLoansPage /> },
+          { path: '/prestamos/:id', element: <LoanAmortizationPage /> },
+          { path: '/clientes', element: <ClientDirectoryPage /> },
+          { path: '/clientes/:id', element: <ClientProfilePage /> },
+          { path: '/calculadora', element: <QuoteCalculatorPage /> },
+          { path: '/configuracion', element: <SettingsPage /> },
+        ],
+      },
     ],
   },
 ]);

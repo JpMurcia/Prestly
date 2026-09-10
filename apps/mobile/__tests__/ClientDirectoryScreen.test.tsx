@@ -7,6 +7,11 @@ jest.mock('../src/data/repositories', () => ({
   clientRepository: { list: jest.fn(), findByPhone: jest.fn(), create: jest.fn() },
   loanRepository: {},
   appSettingsRepository: { getSettings: jest.fn() },
+  authRepository: {
+    getSession: jest.fn().mockResolvedValue({ userId: 'u1', email: 'admin@prestly.local' }),
+    onSessionChange: jest.fn().mockReturnValue(() => {}),
+    signOut: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 const mockList = clientRepository.list as jest.Mock;
