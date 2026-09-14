@@ -34,6 +34,7 @@ function makeEntry(overrides: Partial<CollectionRouteEntry>): CollectionRouteEnt
       interestPortion: 6.25,
       totalAmount: 47.92,
       status: 'pending',
+      isGrace: false,
     },
     loanId: 'loan-1',
     installmentCount: 12,

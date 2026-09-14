@@ -1,10 +1,11 @@
 import type { LoanInstallment } from '@repo/core';
-import { buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
+import { buildPayoffCertificate, buildPayoffCertificateMessage, buildReceiptMessage, buildWhatsAppShareLink, splitPaymentForInstallment } from '@repo/core';
 import { Badge, Button } from '@repo/ui/web';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { clientRepository } from '../data/repositories';
+import { PayoffCertificateView } from '../components/PayoffCertificateView';
 import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { useLoanAmortization } from '../hooks/useLoanAmortization';
 import { useRegisterPayment } from '../hooks/useRegisterPayment';
@@ -28,6 +29,15 @@ function remainingBalance(installment: LoanInstallment): number {
   return Math.round((installment.totalAmount - (installment.paidAmount ?? 0) + Number.EPSILON) * 100) / 100;
 }
 
+/** Fecha de cierre del Certificado de Paz y Salvo — el `paidAt` más reciente entre las cuotas
+ * (derivado, no se persiste aparte; specs/008-flexible-repayment-features/, US3, contracts/
+ * core-interfaces.md §3: esta derivación es responsabilidad de quien llama, no de @repo/core). */
+function closingDate(installments: LoanInstallment[]): Date | null {
+  const paidDates = installments.map((i) => i.paidAt).filter((d): d is Date => d !== undefined);
+  if (paidDates.length === 0) return null;
+  return new Date(Math.max(...paidDates.map((d) => d.getTime())));
+}
+
 /** Tabla de amortización extendida de un préstamo — filtros, registrar cobro (total o
  * parcial) y liquidación anticipada (spec.md, US2 de specs/002-admin-web/, mockup 1c;
  * specs/003-operational-management/, US1/US2). */
@@ -44,11 +54,14 @@ export function LoanAmortizationPage() {
   const payoffLoan = usePayoffLoan();
   const [filter, setFilter] = useState<FilterKey>('todas');
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [showCertificate, setShowCertificate] = useState(false);
 
   const filtered = useMemo(() => {
     const installments = loan?.installments ?? [];
     if (filter === 'todas') return installments;
-    if (filter === 'pagadas') return installments.filter((i) => i.status === 'paid');
+    // Una cuota de gracia nace 'paid' (specs/008-flexible-repayment-features/, D8) pero nunca
+    // se cobró de verdad — no cuenta como "pagada" para este filtro (research.md D8).
+    if (filter === 'pagadas') return installments.filter((i) => i.status === 'paid' && !i.isGrace);
     if (filter === 'vence_hoy') return installments.filter(isDueToday);
     return installments.filter((i) => i.status !== 'paid' && !isDueToday(i));
   }, [loan, filter]);
@@ -59,7 +72,7 @@ export function LoanAmortizationPage() {
     const installments = loan?.installments ?? [];
     return {
       todas: installments.length,
-      pagadas: installments.filter((i) => i.status === 'paid').length,
+      pagadas: installments.filter((i) => i.status === 'paid' && !i.isGrace).length,
       vence_hoy: installments.filter(isDueToday).length,
       pendientes: installments.filter((i) => i.status !== 'paid' && !isDueToday(i)).length,
     };
@@ -78,8 +91,27 @@ export function LoanAmortizationPage() {
     { principal: 0, interest: 0, total: 0 }
   );
 
-  const loanBalance = loan.installments.reduce((acc, i) => acc + remainingBalance(i), 0);
+  const loanBalance = Math.round((loan.installments.reduce((acc, i) => acc + remainingBalance(i), 0) + Number.EPSILON) * 100) / 100;
   const canPayoff = loan.status === 'active' && loanBalance > 0;
+  // specs/008-flexible-repayment-features/, US3, FR-009 — saldo $0.00 exacto habilita el
+  // certificado, sin importar cómo se llegó ahí (plazo normal, liquidación anticipada o abono a
+  // capital); loan.status puede seguir 'active' si se saldó por plazo normal sin liquidar_prestamo.
+  const canGenerateCertificate = loanBalance === 0;
+
+  const payoffCertificateData =
+    canGenerateCertificate && client
+      ? buildPayoffCertificate({
+          loan,
+          client,
+          principalFormatted: formatCurrency(loan.principal),
+          closingDateFormatted: (closingDate(loan.installments) ?? new Date()).toLocaleDateString('es-DO'),
+        })
+      : null;
+
+  const certificateShareLink =
+    client && payoffCertificateData
+      ? buildWhatsAppShareLink(client.phone, buildPayoffCertificateMessage(payoffCertificateData))
+      : null;
 
   const receiptShareLink = (installment: LoanInstallment): string | null => {
     if (!client) return null;
@@ -151,7 +183,23 @@ export function LoanAmortizationPage() {
             className="w-fit px-3 py-1.5"
           />
         )}
+        {canGenerateCertificate && (
+          <Button
+            testID="generate-payoff-certificate"
+            label="Generar Paz y Salvo"
+            onPress={() => setShowCertificate(true)}
+            className="w-fit px-3 py-1.5"
+          />
+        )}
       </div>
+
+      {showCertificate && payoffCertificateData && (
+        <PayoffCertificateView
+          data={payoffCertificateData}
+          shareLink={certificateShareLink}
+          onClose={() => setShowCertificate(false)}
+        />
+      )}
 
       <div className="flex gap-1 rounded-[9px] bg-neutral-100 p-1 self-start">
         <FilterTab label={`Todas · ${filterCounts.todas}`} active={filter === 'todas'} onClick={() => setFilter('todas')} />
@@ -183,21 +231,31 @@ export function LoanAmortizationPage() {
               <tr key={installment.id} className="h-[44px] border-t border-neutral-100">
                 <td className="px-5 font-bold text-brand-ink">{String(installment.number).padStart(2, '0')}</td>
                 <td className="px-5">{installment.dueDate.toLocaleDateString('es-DO')}</td>
-                <td className="px-5 text-right tabular-nums">{formatCurrency(installment.principalPortion)}</td>
-                <td className="px-5 text-right tabular-nums">{formatCurrency(installment.interestPortion)}</td>
-                <td className="px-5 text-right tabular-nums font-bold text-brand-ink">
-                  {formatCurrency(installment.totalAmount)}
-                  {installment.status === 'partial' && (
-                    <div className="text-[10px] font-medium text-neutral-400">
-                      faltan {formatCurrency(remainingBalance(installment))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-5 text-right tabular-nums text-neutral-500">
-                  {formatCurrency(installment.status === 'paid' ? 0 : remainingBalance(installment))}
-                </td>
+                {installment.isGrace ? (
+                  <td className="px-5 text-right text-[11px] font-semibold text-neutral-400" colSpan={4}>
+                    Sin cobro — interés acumulado en la cuota siguiente
+                  </td>
+                ) : (
+                  <>
+                    <td className="px-5 text-right tabular-nums">{formatCurrency(installment.principalPortion)}</td>
+                    <td className="px-5 text-right tabular-nums">{formatCurrency(installment.interestPortion)}</td>
+                    <td className="px-5 text-right tabular-nums font-bold text-brand-ink">
+                      {formatCurrency(installment.totalAmount)}
+                      {installment.status === 'partial' && (
+                        <div className="text-[10px] font-medium text-neutral-400">
+                          faltan {formatCurrency(remainingBalance(installment))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 text-right tabular-nums text-neutral-500">
+                      {formatCurrency(installment.status === 'paid' ? 0 : remainingBalance(installment))}
+                    </td>
+                  </>
+                )}
                 <td className="px-5 text-center">
-                  {installment.status === 'paid' ? (
+                  {installment.isGrace ? (
+                    <Badge label="Gracia" tone="neutral" />
+                  ) : installment.status === 'paid' ? (
                     <Badge label="Pagado" tone="alDia" />
                   ) : installment.status === 'partial' ? (
                     <Badge label="Parcial" tone="neutral" />
@@ -208,29 +266,44 @@ export function LoanAmortizationPage() {
                   )}
                 </td>
                 <td className="px-5 text-right">
-                  <div className="ml-auto flex w-fit items-center gap-1.5">
-                    {installment.status !== 'paid' && (
-                      <>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          max={remainingBalance(installment)}
-                          aria-label={`Monto a registrar para la cuota ${installment.number}`}
-                          value={amounts[installment.id] ?? String(remainingBalance(installment))}
-                          onChange={(e) => setAmounts((prev) => ({ ...prev, [installment.id]: e.target.value }))}
-                          className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right text-[11.5px] tabular-nums"
-                        />
-                        <Button
-                          label="Registrar"
-                          variant="primary"
-                          loading={registerPayment.isPending && registerPayment.variables?.installmentId === installment.id}
-                          onPress={() => handleRegister(installment)}
-                          className="w-fit px-3 py-1.5"
-                        />
-                      </>
-                    )}
-                    {(installment.status === 'paid' || installment.status === 'partial') && (
+                  <div className="ml-auto flex w-fit flex-col items-end gap-1">
+                    <div className="flex items-center gap-1.5">
+                      {installment.status !== 'paid' && (
+                        <>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            aria-label={`Monto a registrar para la cuota ${installment.number}`}
+                            value={amounts[installment.id] ?? String(remainingBalance(installment))}
+                            onChange={(e) => setAmounts((prev) => ({ ...prev, [installment.id]: e.target.value }))}
+                            className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right text-[11.5px] tabular-nums"
+                          />
+                          <Button
+                            label="Registrar"
+                            variant="primary"
+                            loading={registerPayment.isPending && registerPayment.variables?.installmentId === installment.id}
+                            onPress={() => handleRegister(installment)}
+                            className="w-fit px-3 py-1.5"
+                          />
+                        </>
+                      )}
+                    </div>
+                    {installment.status !== 'paid' &&
+                      splitPaymentForInstallment(remainingBalance(installment), amountFor(installment)).principalContribution >
+                        0 && (
+                        <span
+                          data-testid={`principal-contribution-hint-${installment.number}`}
+                          className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"
+                        >
+                          Excedente de{' '}
+                          {formatCurrency(
+                            splitPaymentForInstallment(remainingBalance(installment), amountFor(installment)).principalContribution
+                          )}{' '}
+                          irá a Abono a Capital
+                        </span>
+                      )}
+                    {!installment.isGrace && (installment.status === 'paid' || installment.status === 'partial') && (
                       <a
                         data-testid={`whatsapp-receipt-${installment.number}`}
                         href={receiptShareLink(installment) ?? undefined}

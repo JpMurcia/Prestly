@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
-import { registerPayment } from '@repo/core';
+import { splitPaymentForInstallment } from '@repo/core';
 import { Button, Chip } from '@repo/ui/native';
 
 import { useFormatCurrency } from '../hooks/useFormatCurrency';
@@ -20,9 +20,11 @@ export interface RegisterPaymentModalProps {
 type PaymentMethod = 'cash' | 'transfer';
 
 /** Modal "Registrar cobro" (mockup 1b) — reutilizado desde la ruta de cobranza (US2) y el
- * detalle de préstamo. Cambio calculado en vivo para sobrepago en efectivo; un monto menor
- * al saldo restante se registra como pago parcial (specs/003-operational-management/, US1 —
- * ya no se rechaza como en FR-014 de specs/001-mobile-field-app/). */
+ * detalle de préstamo. Un monto menor al saldo restante se registra como pago parcial
+ * (specs/003-operational-management/, US1 — ya no se rechaza como en FR-014 de
+ * specs/001-mobile-field-app/); un monto mayor ya no rechaza ni da "cambio a entregar" — el
+ * excedente se aplica como abono a capital, calculado en vivo antes de confirmar
+ * (specs/008-flexible-repayment-features/, US2, research.md D9). */
 export function RegisterPaymentModal({ visible, onClose, installmentId, remainingBalance, subtitle }: RegisterPaymentModalProps) {
   const { isConnected } = useNetworkStatus();
   const registerPaymentMutation = useRegisterPayment();
@@ -34,7 +36,7 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, remainin
   const [method, setMethod] = useState<PaymentMethod>('cash');
 
   const receivedAmount = Number(receivedText.replace(',', '.')) || 0;
-  const { amountApplied, changeDue } = registerPayment(roundedRemainingBalance, receivedAmount);
+  const { amountForInstallment, principalContribution } = splitPaymentForInstallment(roundedRemainingBalance, receivedAmount);
   const isPartial = receivedAmount > 0 && receivedAmount < roundedRemainingBalance;
 
   function reset() {
@@ -48,7 +50,9 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, remainin
       return;
     }
     try {
-      await registerPaymentMutation.mutateAsync({ installmentId, amount: amountApplied });
+      // Se envía el monto completo recibido, sin capar — registrar_cobro ya sabe aplicar el
+      // excedente como abono a capital (contracts/data-contract.md).
+      await registerPaymentMutation.mutateAsync({ installmentId, amount: receivedAmount });
       reset();
       onClose();
     } catch {
@@ -90,15 +94,17 @@ export function RegisterPaymentModal({ visible, onClose, installmentId, remainin
             </View>
           </View>
 
-          {changeDue > 0 && (
-            <View testID="payment-modal-change" className="mb-3 rounded-lg bg-[#ECFDF5] p-3">
-              <Text className="text-sm font-bold text-[#047857]">Cambio a entregar: {formatMoney(changeDue)}</Text>
+          {principalContribution > 0 && (
+            <View testID="payment-modal-principal-contribution" className="mb-3 rounded-lg bg-[#ECFDF5] p-3">
+              <Text className="text-sm font-bold text-[#047857]">
+                Excedente de {formatMoney(principalContribution)} irá a Abono a Capital
+              </Text>
             </View>
           )}
           {isPartial && (
             <View testID="payment-modal-partial-warning" className="mb-3 rounded-lg bg-[#F1F5F9] p-3">
               <Text className="text-sm text-[#475569]">
-                Se registrará como pago parcial — quedarán {formatMoney(roundedRemainingBalance - amountApplied)} pendientes de esta cuota.
+                Se registrará como pago parcial — quedarán {formatMoney(roundedRemainingBalance - amountForInstallment)} pendientes de esta cuota.
               </Text>
             </View>
           )}

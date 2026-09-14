@@ -1,4 +1,4 @@
-import { SUPPORTED_CURRENCIES, type CurrencyCode } from '@repo/core';
+import { SUPPORTED_CURRENCIES, type CurrencyCode, type PrincipalContributionMode } from '@repo/core';
 import { Button, Card } from '@repo/ui/web';
 import { useState } from 'react';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -26,6 +26,7 @@ export function SettingsPage() {
       </div>
 
       <CurrencyPanel />
+      <PrincipalContributionModePanel />
       <ConnectionPanel />
       <NotificationHistoryPanel />
     </div>
@@ -57,6 +58,48 @@ function CurrencyPanel() {
             ))}
           </select>
           {isUpdating && <span className="text-xs text-neutral-400">Guardando…</span>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const PRINCIPAL_CONTRIBUTION_MODE_LABEL: Record<PrincipalContributionMode, string> = {
+  reduce_term: 'Reducir plazo (menos cuotas restantes, mismo valor de cuota)',
+  reduce_installment: 'Reducir cuota (mismo plazo, cuotas restantes más bajas)',
+};
+
+/** specs/008-flexible-repayment-features/, US2 (research.md D6) — config única de instalación,
+ * mismo patrón que CurrencyPanel: apps/web es la única superficie que puede cambiarla. */
+function PrincipalContributionModePanel() {
+  const { principalContributionMode, isLoading, updatePrincipalContributionMode, isUpdatingPrincipalContributionMode } =
+    useAppSettings();
+
+  return (
+    <Card>
+      <div className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Modo de abono a capital</div>
+      <p className="mt-1 text-xs text-neutral-500">
+        Cómo se recalcula la tabla de amortización cuando un cobro excede lo exigible de la cuota.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-3 text-sm text-neutral-500">Cargando…</p>
+      ) : (
+        <div className="mt-3 flex items-center gap-3">
+          <select
+            data-testid="principal-contribution-mode-select"
+            value={principalContributionMode}
+            disabled={isUpdatingPrincipalContributionMode}
+            onChange={(e) => updatePrincipalContributionMode(e.target.value as PrincipalContributionMode)}
+            className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-brand-ink"
+          >
+            {(Object.keys(PRINCIPAL_CONTRIBUTION_MODE_LABEL) as PrincipalContributionMode[]).map((mode) => (
+              <option key={mode} value={mode}>
+                {PRINCIPAL_CONTRIBUTION_MODE_LABEL[mode]}
+              </option>
+            ))}
+          </select>
+          {isUpdatingPrincipalContributionMode && <span className="text-xs text-neutral-400">Guardando…</span>}
         </div>
       )}
     </Card>

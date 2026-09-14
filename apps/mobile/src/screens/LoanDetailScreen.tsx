@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } 
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { LoanInstallment } from '@repo/core';
-import { buildLoanShareMessage, buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
+import { buildLoanShareMessage, buildPayoffCertificate, buildPayoffCertificateMessage, buildReceiptMessage, buildWhatsAppShareLink } from '@repo/core';
 import { Badge, Button, Card, ProgressBar } from '@repo/ui/native';
 
 import { useLoan } from '../hooks/useLoan';
@@ -11,9 +11,18 @@ import { useFormatCurrency } from '../hooks/useFormatCurrency';
 import { usePayoffLoan } from '../hooks/usePayoffLoan';
 import { clientRepository } from '../data/repositories';
 import { RegisterPaymentModal } from '../components/RegisterPaymentModal';
+import { PayoffCertificateView } from '../components/PayoffCertificateView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DetallePrestamo'>;
+
+/** Fecha de cierre del Certificado de Paz y Salvo — el `paidAt` más reciente entre las cuotas
+ * (derivado; specs/008-flexible-repayment-features/, US3 — mismo helper que apps/web). */
+function closingDate(installments: LoanInstallment[]): Date | null {
+  const paidDates = installments.map((i) => i.paidAt).filter((d): d is Date => d !== undefined);
+  if (paidDates.length === 0) return null;
+  return new Date(Math.max(...paidDates.map((d) => d.getTime())));
+}
 
 /** Mockup 1b — detalle del préstamo: cliente, progreso y cronograma completo. */
 export function LoanDetailScreen({ route }: Props) {
@@ -26,6 +35,7 @@ export function LoanDetailScreen({ route }: Props) {
     enabled: !!loan,
   });
   const [selectedInstallment, setSelectedInstallment] = useState<{ id: string; amount: number; label: string } | null>(null);
+  const [showCertificate, setShowCertificate] = useState(false);
   const payoffLoan = usePayoffLoan();
 
   if (isLoading || !loan) {
@@ -39,8 +49,27 @@ export function LoanDetailScreen({ route }: Props) {
   const paidCount = loan.installments.filter((i) => i.status === 'paid').length;
   // Crédito lo que sea que ya se haya cobrado, sin importar el estado (specs/003, misma
   // corrección que packages/data-supabase/src/SupabaseClientRepository.ts).
-  const balance = loan.installments.reduce((acc, i) => acc + (i.totalAmount - (i.paidAmount ?? 0)), 0);
+  const balance = Math.round((loan.installments.reduce((acc, i) => acc + (i.totalAmount - (i.paidAmount ?? 0)), 0) + Number.EPSILON) * 100) / 100;
   const canPayoff = loan.status === 'active' && balance > 0;
+  // specs/008-flexible-repayment-features/, US3, FR-009 — saldo $0.00 exacto habilita el
+  // certificado, sin importar cómo se llegó ahí; loan.status puede seguir 'active' si se saldó
+  // por plazo normal sin liquidar_prestamo (mismo criterio que apps/web).
+  const canGenerateCertificate = balance === 0;
+
+  const payoffCertificateData =
+    canGenerateCertificate && client
+      ? buildPayoffCertificate({
+          loan,
+          client,
+          principalFormatted: formatMoney(loan.principal),
+          closingDateFormatted: (closingDate(loan.installments) ?? new Date()).toLocaleDateString('es'),
+        })
+      : null;
+
+  const certificateShareLink =
+    client && payoffCertificateData
+      ? buildWhatsAppShareLink(client.phone, buildPayoffCertificateMessage(payoffCertificateData))
+      : null;
 
   const loanShareLink =
     client && loan.installments[0]
@@ -122,6 +151,9 @@ export function LoanDetailScreen({ route }: Props) {
             loading={payoffLoan.isPending}
           />
         )}
+        {canGenerateCertificate && (
+          <Button testID="generate-payoff-certificate" label="Generar Paz y Salvo" onPress={() => setShowCertificate(true)} />
+        )}
         <Pressable
           testID="whatsapp-share-loan"
           disabled={!loanShareLink}
@@ -149,7 +181,7 @@ export function LoanDetailScreen({ route }: Props) {
             </Text>
           </View>
           <View className="flex-row items-center gap-2">
-            {(installment.status === 'paid' || installment.status === 'partial') && (
+            {!installment.isGrace && (installment.status === 'paid' || installment.status === 'partial') && (
               <Pressable
                 testID={`whatsapp-receipt-${installment.number}`}
                 disabled={!receiptShareLink(installment)}
@@ -160,7 +192,9 @@ export function LoanDetailScreen({ route }: Props) {
                 </Text>
               </Pressable>
             )}
-            {installment.status === 'paid' ? (
+            {installment.isGrace ? (
+              <Badge label="Gracia" tone="neutral" />
+            ) : installment.status === 'paid' ? (
               <Badge label="Pagado" tone="alDia" />
             ) : (
               <Pressable
@@ -187,6 +221,15 @@ export function LoanDetailScreen({ route }: Props) {
           installmentId={selectedInstallment.id}
           remainingBalance={selectedInstallment.amount}
           subtitle={selectedInstallment.label}
+        />
+      )}
+
+      {payoffCertificateData && (
+        <PayoffCertificateView
+          visible={showCertificate}
+          data={payoffCertificateData}
+          shareLink={certificateShareLink}
+          onClose={() => setShowCertificate(false)}
         />
       )}
     </ScrollView>

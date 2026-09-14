@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useQuery } from '@tanstack/react-query';
-import { quoteLoan, type PaymentFrequency } from '@repo/core';
+import { applyGracePeriods, quoteLoan, type PaymentFrequency } from '@repo/core';
 import { Button, Card, Chip, SegmentedControl } from '@repo/ui/native';
 
 import { clientRepository } from '../data/repositories';
@@ -51,6 +51,8 @@ export function QuoteCalculatorScreen({ route }: Props) {
   const [frequency, setFrequency] = useState<PaymentFrequency>('weekly');
   const [viewMode, setViewMode] = useState<'resumen' | 'tabla'>('resumen');
   const [showIssueSheet, setShowIssueSheet] = useState(false);
+  const [showGraceConfig, setShowGraceConfig] = useState(false);
+  const [graceInstallmentNumbers, setGraceInstallmentNumbers] = useState<number[]>([]);
   const showTable = viewMode === 'tabla';
 
   const principal = Number(principalText) || 0;
@@ -68,16 +70,31 @@ export function QuoteCalculatorScreen({ route }: Props) {
     });
   }, [principal, interestRate, installmentCount, frequency]);
 
-  const canIssue = schedule !== null;
+  // La última cuota nunca puede ser de gracia (spec FR-004) — se descarta cualquier selección
+  // que haya quedado fuera de rango tras reducir el número de cuotas.
+  const validGraceNumbers = graceInstallmentNumbers.filter((n) => n >= 1 && n < installmentCount);
+  const gracedSchedule = useMemo(
+    () => (schedule ? applyGracePeriods(schedule, validGraceNumbers) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schedule, validGraceNumbers.join(',')]
+  );
+
+  function toggleGraceNumber(n: number) {
+    setGraceInstallmentNumbers((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  }
+
+  const canIssue = gracedSchedule !== null;
 
   function handleShare() {
-    if (!schedule) return;
-    const lines = schedule.installments.map(
-      (i) => `${i.number}. ${formatDate(i.dueDate)} — Cap ${formatMoney(i.principalPortion)} · Int ${formatMoney(i.interestPortion)} · Cuota ${formatMoney(i.totalAmount)}`
+    if (!gracedSchedule) return;
+    const lines = gracedSchedule.installments.map((i) =>
+      i.isGrace
+        ? `${i.number}. ${formatDate(i.dueDate)} — Gracia (sin cobro)`
+        : `${i.number}. ${formatDate(i.dueDate)} — Cap ${formatMoney(i.principalPortion)} · Int ${formatMoney(i.interestPortion)} · Cuota ${formatMoney(i.totalAmount)}`
     );
     const message = [
       `Cotización Prestly — ${formatMoney(principal)} a ${(interestRate * 100).toFixed(0)}%, ${installmentCount} cuotas`,
-      `Total a pagar: ${formatMoney(schedule.totalToPay)}`,
+      `Total a pagar: ${formatMoney(gracedSchedule.totalToPay)}`,
       '',
       ...lines,
     ].join('\n');
@@ -146,24 +163,53 @@ export function QuoteCalculatorScreen({ route }: Props) {
             ))}
           </View>
         </View>
+        <View>
+          <Button
+            testID="quote-toggle-grace-config"
+            label={`${showGraceConfig ? '− Ocultar' : '+'} Configurar meses de gracia${
+              validGraceNumbers.length > 0 && !showGraceConfig ? ` (${validGraceNumbers.length})` : ''
+            }`}
+            variant="secondary"
+            onPress={() => setShowGraceConfig((v) => !v)}
+          />
+          {showGraceConfig && (
+            <View className="mt-2 gap-2">
+              <Text className="text-xs text-neutral-500">
+                Elegí en qué cuotas el cliente no paga ni genera mora — el interés de esa cuota se suma a la
+                siguiente. La última cuota no puede marcarse como gracia.
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                {Array.from({ length: Math.max(installmentCount - 1, 0) }, (_, i) => i + 1).map((n) => (
+                  <Chip
+                    key={n}
+                    testID={`quote-grace-chip-${n}`}
+                    label={`Cuota ${n}`}
+                    selected={validGraceNumbers.includes(n)}
+                    onPress={() => toggleGraceNumber(n)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
       </Card>
 
-      {schedule && (
+      {gracedSchedule && (
         <Card className="gap-2 bg-[#ECFDF5]">
           <Text testID="quote-total-to-pay" className="text-3xl font-extrabold tabular-nums text-brand-ink">
-            {formatMoney(schedule.totalToPay)}
+            {formatMoney(gracedSchedule.totalToPay)}
           </Text>
           <Text className="text-xs font-bold uppercase text-[#047857]">Total a pagar</Text>
           <View className="flex-row justify-between pt-2">
             <View>
               <Text testID="quote-installment-amount" className="text-lg font-bold tabular-nums text-brand-ink">
-                {formatMoney(schedule.installments[0]?.totalAmount ?? 0)}
+                {formatMoney(schedule?.installments[0]?.totalAmount ?? 0)}
               </Text>
               <Text className="text-xs text-neutral-500">Cuota</Text>
             </View>
             <View>
               <Text testID="quote-profit" className="text-lg font-bold tabular-nums text-[#047857]">
-                +{formatMoney(schedule.totalInterest)}
+                +{formatMoney(gracedSchedule.totalInterest)}
               </Text>
               <Text className="text-xs text-neutral-500">Ganancia</Text>
             </View>
@@ -173,9 +219,9 @@ export function QuoteCalculatorScreen({ route }: Props) {
 
       <SegmentedControl testID="quote-toggle-table" options={VIEW_MODE_OPTIONS} value={viewMode} onChange={(v) => setViewMode(v as 'resumen' | 'tabla')} />
 
-      {showTable && schedule && (
+      {showTable && gracedSchedule && (
         <Card>
-          {schedule.installments.map((installment) => (
+          {gracedSchedule.installments.map((installment) => (
             <View
               key={installment.number}
               testID={`quote-installment-row-${installment.number}`}
@@ -183,21 +229,27 @@ export function QuoteCalculatorScreen({ route }: Props) {
             >
               <Text className="w-8 text-xs text-neutral-500">{installment.number}</Text>
               <Text className="flex-1 text-xs text-neutral-500">{formatDate(installment.dueDate)}</Text>
-              <Text className="w-16 text-right text-xs tabular-nums text-brand-ink">{formatMoney(installment.principalPortion)}</Text>
-              <Text className="w-16 text-right text-xs tabular-nums text-brand-ink">{formatMoney(installment.interestPortion)}</Text>
-              <Text className="w-16 text-right text-xs font-bold tabular-nums text-brand-ink">{formatMoney(installment.totalAmount)}</Text>
+              {installment.isGrace ? (
+                <Text className="flex-[1.5] text-right text-xs font-bold text-neutral-400">Gracia</Text>
+              ) : (
+                <>
+                  <Text className="w-16 text-right text-xs tabular-nums text-brand-ink">{formatMoney(installment.principalPortion)}</Text>
+                  <Text className="w-16 text-right text-xs tabular-nums text-brand-ink">{formatMoney(installment.interestPortion)}</Text>
+                  <Text className="w-16 text-right text-xs font-bold tabular-nums text-brand-ink">{formatMoney(installment.totalAmount)}</Text>
+                </>
+              )}
             </View>
           ))}
           <View className="flex-row justify-between pt-2">
             <Text className="flex-1 text-xs font-bold text-neutral-500">Totales</Text>
             <Text testID="quote-table-total-principal" className="w-16 text-right text-xs font-bold tabular-nums text-brand-ink">
-              {formatMoney(schedule.totalPrincipal)}
+              {formatMoney(gracedSchedule.totalPrincipal)}
             </Text>
             <Text testID="quote-table-total-interest" className="w-16 text-right text-xs font-bold tabular-nums text-brand-ink">
-              {formatMoney(schedule.totalInterest)}
+              {formatMoney(gracedSchedule.totalInterest)}
             </Text>
             <Text testID="quote-table-total-amount" className="w-16 text-right text-xs font-bold tabular-nums text-brand-ink">
-              {formatMoney(schedule.totalToPay)}
+              {formatMoney(gracedSchedule.totalToPay)}
             </Text>
           </View>
         </Card>
@@ -206,11 +258,11 @@ export function QuoteCalculatorScreen({ route }: Props) {
       <Button testID="quote-share" label="Compartir tabla por WhatsApp" variant="secondary" onPress={handleShare} disabled={!canIssue} />
       <Button testID="quote-issue" label="Emitir este préstamo" onPress={handleIssuePress} disabled={!canIssue} />
 
-      {schedule && (
+      {gracedSchedule && (
         <IssueLoanSheet
           visible={showIssueSheet}
           onClose={() => setShowIssueSheet(false)}
-          schedule={schedule}
+          schedule={gracedSchedule}
           principal={principal}
           interestRate={interestRate}
           installmentCount={installmentCount}
@@ -219,7 +271,7 @@ export function QuoteCalculatorScreen({ route }: Props) {
           preselectedClient={prefilledClient ?? undefined}
           onConfirm={async (client) => {
             const loan = await issueLoan.mutateAsync({
-              schedule,
+              schedule: gracedSchedule,
               principal,
               interestRate,
               installmentCount,

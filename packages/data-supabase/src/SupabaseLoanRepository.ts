@@ -9,6 +9,7 @@ import type {
   LoanStrategy,
   NewLoan,
   PaymentFrequency,
+  RegisterInstallmentPaymentResult,
 } from '@repo/core';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fromDateOnly, toDateOnly } from './dateOnly';
@@ -49,6 +50,7 @@ const INSTALLMENT_STATUS_FROM_DB: Record<string, InstallmentStatus> = {
 
 interface CuotaRow {
   id: string;
+  prestamo_id: string;
   numero: number;
   fecha_vencimiento: string;
   monto_capital: number;
@@ -57,6 +59,7 @@ interface CuotaRow {
   estado: 'pendiente' | 'parcial' | 'pagado';
   fecha_pago: string | null;
   monto_pagado: number | null;
+  es_gracia: boolean;
 }
 
 interface PrestamoRow {
@@ -95,6 +98,7 @@ function toLoanInstallment(row: CuotaRow): LoanInstallment {
     status: INSTALLMENT_STATUS_FROM_DB[row.estado] ?? 'pending',
     paidAt: row.fecha_pago ? new Date(row.fecha_pago) : undefined,
     paidAmount: row.monto_pagado ?? undefined,
+    isGrace: row.es_gracia,
   };
 }
 
@@ -183,6 +187,9 @@ export class SupabaseLoanRepository implements ILoanRepository {
         monto_capital: installment.principalPortion,
         monto_interes: installment.interestPortion,
         monto_cuota: installment.totalAmount,
+        // specs/008-flexible-repayment-features/, US1 — emitir_prestamo inserta esta cuota en
+        // $0/'pagado' cuando es true (data-model.md §emitir_prestamo).
+        es_gracia: installment.isGrace ?? false,
       })),
     });
 
@@ -217,8 +224,13 @@ export class SupabaseLoanRepository implements ILoanRepository {
     return data ? toLoan(data) : null;
   }
 
-  async registerInstallmentPayment(installmentId: string, amount: number): Promise<LoanInstallment> {
-    const { data, error } = await this.supabase
+  /** specs/008-flexible-repayment-features/, US2 — `registrar_cobro` ya no rechaza un monto
+   * mayor al exigible (research.md D3): el excedente queda registrado en la fila de `cobros`
+   * que esa misma llamada insertó, y puede liquidar el préstamo (modo `reducir_plazo`,
+   * research.md D4). Dos lecturas de seguimiento, no atómicas con la RPC pero de solo lectura
+   * — mismo criterio aceptado en contracts/data-contract.md (nota de implementación). */
+  async registerInstallmentPayment(installmentId: string, amount: number): Promise<RegisterInstallmentPaymentResult> {
+    const { data: cuota, error } = await this.supabase
       .rpc('registrar_cobro', { p_cuota_id: installmentId, p_monto: amount })
       .single<CuotaRow>();
 
@@ -227,7 +239,23 @@ export class SupabaseLoanRepository implements ILoanRepository {
       if (error.code === 'P0002') throw new InvalidPaymentAmountError(installmentId, amount);
       throw error;
     }
-    return toLoanInstallment(data);
+
+    const [{ data: cobro }, { data: prestamo }] = await Promise.all([
+      this.supabase
+        .from('cobros')
+        .select('abono_capital')
+        .eq('cuota_id', installmentId)
+        .order('fecha_cobro', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ abono_capital: number }>(),
+      this.supabase.from('prestamos').select('estado').eq('id', cuota.prestamo_id).maybeSingle<{ estado: string }>(),
+    ]);
+
+    return {
+      installment: toLoanInstallment(cuota),
+      principalContributionApplied: cobro?.abono_capital ?? 0,
+      loanSettled: prestamo?.estado === 'liquidado',
+    };
   }
 
   async payoffLoan(loanId: string): Promise<Loan> {
@@ -249,7 +277,7 @@ export class SupabaseLoanRepository implements ILoanRepository {
     const { data, error } = await this.supabase
       .from('cuotas')
       .select(
-        'id, numero, fecha_vencimiento, monto_capital, monto_interes, monto_cuota, estado, fecha_pago, monto_pagado, ' +
+        'id, numero, fecha_vencimiento, monto_capital, monto_interes, monto_cuota, estado, fecha_pago, monto_pagado, es_gracia, ' +
           'prestamos!inner(id, estado, num_cuotas, clientes!inner(id, nombre, telefono))'
       )
       .in('estado', ['pendiente', 'parcial'])

@@ -13,6 +13,7 @@ export function chainableResult(result: { data: unknown; error: unknown }) {
     or: () => handler,
     lte: () => handler,
     order: () => handler,
+    limit: () => handler,
     returns: () => handler,
     single: () => Promise.resolve(result),
     maybeSingle: () => Promise.resolve(result),

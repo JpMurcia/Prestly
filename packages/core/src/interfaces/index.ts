@@ -118,6 +118,9 @@ export interface LoanInstallment extends Installment {
   paidAt?: Date;
   /** Monto acumulado recibido hasta ahora (0 < paidAmount < totalAmount mientras 'partial'). */
   paidAmount?: number;
+  /** Fijo desde la estructuración del préstamo (specs/008-flexible-repayment-features/, US1) —
+   * true si esta cuota fue marcada "de gracia" (nace 'paid'/$0, ver applyGracePeriods). */
+  isGrace: boolean;
 }
 
 export interface Loan {
@@ -145,7 +148,10 @@ export interface NewLoan {
   installmentCount: number;
   frequency: PaymentFrequency;
   issueDate: Date;
-  installments: Installment[];
+  /** `isGrace` es opcional — un préstamo sin meses de gracia envía el InstallmentSchedule de
+   * quoteLoan tal cual; uno con gracia envía el resultado de applyGracePeriods
+   * (specs/008-flexible-repayment-features/, US1). Ausente se trata como `false`. */
+  installments: Array<Installment & { isGrace?: boolean }>;
 }
 
 export interface CollectionRouteEntry {
@@ -165,6 +171,18 @@ export interface ActiveLoanSummary {
   client: Pick<Client, 'id' | 'name' | 'phone'>;
 }
 
+/** Resultado de registrar un cobro (specs/008-flexible-repayment-features/, US2) — además de la
+ * cuota, informa cuánto de ese pago excedió lo exigible (abono a capital) y si, como
+ * consecuencia, el préstamo quedó completamente saldado en la misma operación. */
+export interface RegisterInstallmentPaymentResult {
+  installment: LoanInstallment;
+  /** Cuánto de este cobro se aplicó como abono a capital — 0 si no hubo excedente (spec SC-003). */
+  principalContributionApplied: number;
+  /** true si, como consecuencia del abono a capital, el préstamo quedó completamente saldado
+   * en la misma operación (spec, Historia 2, escenario 5). */
+  loanSettled: boolean;
+}
+
 export interface ILoanRepository {
   findById(id: string): Promise<Loan | null>;
   /** Crea un préstamo nuevo junto con todas sus cuotas de forma atómica (FR-004, US1);
@@ -173,14 +191,16 @@ export interface ILoanRepository {
   listByClient(clientId: string): Promise<Loan[]>;
   findActiveByClient(clientId: string): Promise<Loan | null>;
   /**
-   * Registra un pago (total o parcial) sobre una cuota pendiente o parcial, por el monto
-   * indicado. Un pago total es simplemente `amount` == saldo restante — no hay un método
-   * separado para "pagar completo" (specs/003-operational-management/, US1, FR-001/FR-003/
-   * FR-004). Rechaza (guarda de concurrencia) si el monto excede el saldo restante o si la
-   * cuota ya no admite pagos. REEMPLAZA a `markInstallmentPaid(installmentId)` de
-   * specs/001-002 — mismo procedimiento de base de datos extendido, no uno nuevo en paralelo.
+   * Registra un pago (total, parcial, o con excedente) sobre una cuota pendiente o parcial, por
+   * el monto indicado. Un pago total es simplemente `amount` == saldo restante — no hay un
+   * método separado para "pagar completo" (specs/003-operational-management/, US1, FR-001/
+   * FR-003/FR-004). Un monto MAYOR al saldo restante ya NO se rechaza (specs/008-flexible-
+   * repayment-features/, US2, research.md D3): el excedente se aplica como abono a capital,
+   * informado en el resultado. Rechaza (guarda de concurrencia) solo si la cuota ya no admite
+   * pagos. REEMPLAZA a `markInstallmentPaid(installmentId)` de specs/001-002 — mismo
+   * procedimiento de base de datos extendido, no uno nuevo en paralelo.
    */
-  registerInstallmentPayment(installmentId: string, amount: number): Promise<LoanInstallment>;
+  registerInstallmentPayment(installmentId: string, amount: number): Promise<RegisterInstallmentPaymentResult>;
   /**
    * Liquida anticipadamente un préstamo activo: paga el saldo restante de todas sus cuotas
    * pendientes/parciales en una sola operación atómica y lo marca `settled`
@@ -272,19 +292,27 @@ export interface IWhatsAppNotificationHistoryReader {
 
 // ── Configuración global de la instalación (specs/006-rebrand-currency-polish/) ────────────
 
+/** Modo de recálculo tras un abono a capital (specs/008-flexible-repayment-features/, US2,
+ * FR-007) — 'reduce_term' (default): prepaga cuotas futuras completas, menos cuotas restantes.
+ * 'reduce_installment': reduce el capital de las cuotas futuras, mismo plazo. Config única de
+ * instalación (research.md D6), no una elección por transacción. */
+export type PrincipalContributionMode = 'reduce_term' | 'reduce_installment';
+
 export interface AppSettings {
   currency: CurrencyCode;
+  principalContributionMode: PrincipalContributionMode;
 }
 
 /**
- * Ajustes globales de la instalación (hoy solo moneda). Una sola interfaz de lectura/escritura,
- * no separada ISP-style — igual criterio que IWhatsAppConfigRepository: un único consumidor real
- * (la pantalla de Configuración en apps/web) que siempre necesita ambas mitades juntas.
- * apps/mobile solo invoca getSettings() (plan.md, Structure Decision).
+ * Ajustes globales de la instalación (moneda, modo de abono a capital). Una sola interfaz de
+ * lectura/escritura, no separada ISP-style — igual criterio que IWhatsAppConfigRepository: un
+ * único consumidor real (la pantalla de Configuración en apps/web) que siempre necesita ambas
+ * mitades juntas. apps/mobile solo invoca getSettings() (plan.md, Structure Decision).
  */
 export interface IAppSettingsRepository {
   getSettings(): Promise<AppSettings>;
   updateCurrency(currency: CurrencyCode): Promise<AppSettings>;
+  updatePrincipalContributionMode(mode: PrincipalContributionMode): Promise<AppSettings>;
 }
 
 // ── Autenticación del administrador (specs/007-admin-authentication/) ──────────────────────

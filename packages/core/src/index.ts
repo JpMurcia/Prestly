@@ -12,7 +12,13 @@ export { createStandaloneClient, DuplicatePhoneError } from './use-cases/createS
 export type { CreateStandaloneClientDeps } from './use-cases/createStandaloneClient';
 export { registerPayment } from './use-cases/registerPayment';
 export type { RegisterPaymentResult } from './use-cases/registerPayment';
+export { applyGracePeriods, LastInstallmentCannotBeGraceError } from './domain/graceInstallments';
+export type { GracedInstallment, GracedInstallmentSchedule } from './domain/graceInstallments';
+export { splitPaymentForInstallment } from './domain/principalContribution';
+export type { PaymentSplit } from './domain/principalContribution';
 export { normalizePhoneForWhatsApp } from './whatsapp/normalizePhone';
 export { buildWhatsAppShareLink } from './whatsapp/buildShareLink';
-export { buildLoanShareMessage, buildReceiptMessage } from './whatsapp/buildMessages';
+export { buildLoanShareMessage, buildReceiptMessage, buildPayoffCertificateMessage } from './whatsapp/buildMessages';
 export type { LoanShareMessageParams, ReceiptMessageParams } from './whatsapp/buildMessages';
+export { buildPayoffCertificate, LoanNotFullySettledError } from './payoff/buildPayoffCertificate';
+export type { PayoffCertificateData, BuildPayoffCertificateParams } from './payoff/buildPayoffCertificate';

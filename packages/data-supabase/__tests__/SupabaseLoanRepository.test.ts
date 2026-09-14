@@ -94,6 +94,7 @@ describe('SupabaseLoanRepository', () => {
       chainableResult({
         data: {
           id: 'cu1',
+          prestamo_id: 'p1',
           numero: 1,
           fecha_vencimiento: '2026-09-10',
           monto_capital: 41.67,
@@ -102,19 +103,58 @@ describe('SupabaseLoanRepository', () => {
           estado: 'parcial',
           fecha_pago: null,
           monto_pagado: 20,
+          es_gracia: false,
         },
         error: null,
       })
     );
-    const supabase = { from: jest.fn(), rpc: rpcSpy };
+    const fromSpy = jest.fn((table: string) => {
+      if (table === 'cobros') return chainableResult({ data: { abono_capital: 0 }, error: null });
+      return chainableResult({ data: { estado: 'activo' }, error: null });
+    });
+    const supabase = { from: fromSpy, rpc: rpcSpy };
     const repo = new SupabaseLoanRepository(supabase as never);
 
-    const installment = await repo.registerInstallmentPayment('cu1', 20);
+    const result = await repo.registerInstallmentPayment('cu1', 20);
 
     expect(rpcSpy).toHaveBeenCalledWith('registrar_cobro', { p_cuota_id: 'cu1', p_monto: 20 });
-    expect(installment.status).toBe('partial');
-    expect(installment.paidAmount).toBe(20);
-    expect(installment.paidAt).toBeUndefined();
+    expect(result.installment.status).toBe('partial');
+    expect(result.installment.paidAmount).toBe(20);
+    expect(result.installment.paidAt).toBeUndefined();
+    expect(result.principalContributionApplied).toBe(0);
+    expect(result.loanSettled).toBe(false);
+  });
+
+  it('registerInstallmentPayment — specs/008-flexible-repayment-features/, US2: informa el abono a capital y si el préstamo quedó liquidado', async () => {
+    const rpcSpy = jest.fn().mockReturnValue(
+      chainableResult({
+        data: {
+          id: 'cu1',
+          prestamo_id: 'p1',
+          numero: 1,
+          fecha_vencimiento: '2026-09-10',
+          monto_capital: 41.67,
+          monto_interes: 6.25,
+          monto_cuota: 47.92,
+          estado: 'pagado',
+          fecha_pago: '2026-09-10T00:00:00.000Z',
+          monto_pagado: 47.92,
+          es_gracia: false,
+        },
+        error: null,
+      })
+    );
+    const fromSpy = jest.fn((table: string) => {
+      if (table === 'cobros') return chainableResult({ data: { abono_capital: 52.08 }, error: null });
+      return chainableResult({ data: { estado: 'liquidado' }, error: null });
+    });
+    const supabase = { from: fromSpy, rpc: rpcSpy };
+    const repo = new SupabaseLoanRepository(supabase as never);
+
+    const result = await repo.registerInstallmentPayment('cu1', 100);
+
+    expect(result.principalContributionApplied).toBe(52.08);
+    expect(result.loanSettled).toBe(true);
   });
 
   it('payoffLoan llama a la RPC `liquidar_prestamo` y relee el préstamo completo (specs/003, US2)', async () => {

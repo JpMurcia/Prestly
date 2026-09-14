@@ -1,6 +1,6 @@
 import type { PaymentFrequency } from '@repo/core';
-import { buildLoanShareMessage, buildWhatsAppShareLink, quoteLoan } from '@repo/core';
-import { Button } from '@repo/ui/web';
+import { applyGracePeriods, buildLoanShareMessage, buildWhatsAppShareLink, quoteLoan } from '@repo/core';
+import { Badge, Button } from '@repo/ui/web';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { clientRepository } from '../data/repositories';
@@ -22,6 +22,9 @@ export function QuoteCalculatorPage() {
   const [interestRatePct, setInterestRatePct] = useState(15);
   const [installmentCount, setInstallmentCount] = useState(12);
   const [frequency, setFrequency] = useState<PaymentFrequency>('weekly');
+
+  const [showGraceConfig, setShowGraceConfig] = useState(false);
+  const [graceInstallmentNumbers, setGraceInstallmentNumbers] = useState<number[]>([]);
 
   const [clientMode, setClientMode] = useState<'nuevo' | 'existente'>('nuevo');
   const [clientName, setClientName] = useState('');
@@ -50,6 +53,19 @@ export function QuoteCalculatorPage() {
     [principal, interestRatePct, installmentCount, frequency]
   );
 
+  // La última cuota nunca puede ser de gracia (spec FR-004) — se descarta cualquier selección
+  // que haya quedado fuera de rango tras reducir el número de cuotas.
+  const validGraceNumbers = graceInstallmentNumbers.filter((n) => n >= 1 && n < installmentCount);
+  const gracedSchedule = useMemo(
+    () => applyGracePeriods(schedule, validGraceNumbers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schedule, validGraceNumbers.join(',')]
+  );
+
+  function toggleGraceNumber(n: number) {
+    setGraceInstallmentNumbers((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  }
+
   const canIssue = clientMode === 'existente' ? Boolean(selectedClient) : Boolean(clientName && clientPhone);
 
   function handleIssue() {
@@ -60,7 +76,7 @@ export function QuoteCalculatorPage() {
 
     issueLoan.mutate(
       {
-        schedule,
+        schedule: gracedSchedule,
         principal,
         interestRate: interestRatePct / 100,
         installmentCount,
@@ -73,14 +89,14 @@ export function QuoteCalculatorPage() {
   }
 
   const loanShareLink =
-    issuedClient && schedule.installments[0]
+    issuedClient && gracedSchedule.installments[0]
       ? buildWhatsAppShareLink(
           issuedClient.phone,
           buildLoanShareMessage({
             clientName: issuedClient.name,
             principalFormatted: formatCurrency(principal).replace('$', ''),
             installmentCount,
-            firstDueDateFormatted: schedule.installments[0].dueDate.toLocaleDateString('es-DO'),
+            firstDueDateFormatted: gracedSchedule.installments[0].dueDate.toLocaleDateString('es-DO'),
           })
         )
       : null;
@@ -128,6 +144,46 @@ export function QuoteCalculatorPage() {
               ))}
             </select>
           </Field>
+
+          <div className="border-t border-neutral-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowGraceConfig((v) => !v)}
+              className="text-[11.5px] font-bold text-brand-navy"
+            >
+              {showGraceConfig ? '− Ocultar' : '+'} Configurar meses de gracia
+              {validGraceNumbers.length > 0 && !showGraceConfig ? ` (${validGraceNumbers.length})` : ''}
+            </button>
+            {showGraceConfig && (
+              <div className="mt-3 flex flex-col gap-2">
+                <p className="text-[11px] text-neutral-500">
+                  Elegí en qué cuotas el cliente no paga ni genera mora — el interés de esa cuota se suma a la
+                  siguiente. La última cuota no puede marcarse como gracia.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from({ length: Math.max(installmentCount - 1, 0) }, (_, i) => i + 1).map((n) => (
+                    <label
+                      key={n}
+                      className={[
+                        'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold',
+                        validGraceNumbers.includes(n)
+                          ? 'border-brand-emerald bg-emerald-50 text-emerald-700'
+                          : 'border-neutral-200 text-neutral-600',
+                      ].join(' ')}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={validGraceNumbers.includes(n)}
+                        onChange={() => toggleGraceNumber(n)}
+                        className="accent-brand-emerald"
+                      />
+                      Cuota {n}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-5">
@@ -233,15 +289,23 @@ export function QuoteCalculatorPage() {
             </tr>
           </thead>
           <tbody>
-            {schedule.installments.map((installment) => (
+            {gracedSchedule.installments.map((installment) => (
               <tr key={installment.number} className="h-[40px] border-t border-neutral-100">
                 <td className="px-5 font-bold text-brand-ink">{String(installment.number).padStart(2, '0')}</td>
                 <td className="px-5">{installment.dueDate.toLocaleDateString('es-DO')}</td>
-                <td className="px-5 text-right tabular-nums">{formatCurrency(installment.principalPortion)}</td>
-                <td className="px-5 text-right tabular-nums">{formatCurrency(installment.interestPortion)}</td>
-                <td className="px-5 text-right tabular-nums font-bold text-brand-ink">
-                  {formatCurrency(installment.totalAmount)}
-                </td>
+                {installment.isGrace ? (
+                  <td className="px-5 text-right" colSpan={3}>
+                    <Badge label="Gracia" tone="neutral" />
+                  </td>
+                ) : (
+                  <>
+                    <td className="px-5 text-right tabular-nums">{formatCurrency(installment.principalPortion)}</td>
+                    <td className="px-5 text-right tabular-nums">{formatCurrency(installment.interestPortion)}</td>
+                    <td className="px-5 text-right tabular-nums font-bold text-brand-ink">
+                      {formatCurrency(installment.totalAmount)}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
